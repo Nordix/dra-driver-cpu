@@ -268,3 +268,5 @@ release: push-image ## push all images and helm charts (helm chart only on exact
 	else \
 		echo "Not on a tag, skipping helm chart push"; \
 	fi
+helm-lint:
+	helm lint --strict deployment/helm/dra-driver-cpu
