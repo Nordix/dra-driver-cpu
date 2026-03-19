@@ -161,11 +161,9 @@ endef
 dist:
 	@mkdir -p dist
 
-manifests: dist install-yq ## create the install manifest
+manifests: dist ## create the install manifest
 	@cd dist && cp -a ../manifests/base/*.part.yaml .
-	@$(YQ) -i '.spec.template.spec.containers[0].image = "${IMAGE}"' dist/daemonset-dracpu.part.yaml
-	@$(YQ) -i '.spec.template.metadata.labels["build"] = "${GIT_VERSION}"' dist/daemonset-dracpu.part.yaml
-	@$(YQ) '.' \
+	@cat \
 		dist/clusterrole-dracpu.part.yaml \
 		dist/serviceaccount-dracpu.part.yaml \
 		dist/clusterrolebinding-dracpu.part.yaml \
