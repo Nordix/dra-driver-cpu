@@ -12,24 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
+nameOverride: ""
+fullnameOverride: ""
+
 image:
-  pullPolicy: Always
   repository: us-central1-docker.pkg.dev/k8s-staging-images/dra-driver-cpu/dra-driver-cpu
   tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+rbac:
+  create: true
+
+serviceAccount:
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
 resources:
   requests:
     cpu: "100m"
     memory: "50Mi"
+  limits: {}
+
 tolerations:
-- key: "node-role.kubernetes.io/control-plane"
-  operator: "Equal"
-  effect: "NoSchedule"
-  value: ""
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"
+
 args:
   logLevel: 4
   cpuDeviceMode: "grouped"
   reservedCPUs: ""  # e.g. "0-1"
+
 livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
   initialDelaySeconds: 10
+
 readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
   initialDelaySeconds: 5

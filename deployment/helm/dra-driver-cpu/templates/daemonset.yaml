@@ -20,28 +20,34 @@ metadata:
   labels:
     {{- include "dra-driver-cpu.labels" . | nindent 4 }}
     tier: node
-    app: dracpu
-    k8s-app: dracpu
+    k8s-app: {{ include "dra-driver-cpu.name" . }}
 spec:
   selector:
     matchLabels:
       {{- include "dra-driver-cpu.selectorLabels" . | nindent 6 }}
-      app: dracpu
   template:
     metadata:
       labels:
-        {{- include "dra-driver-cpu.selectorLabels" . | nindent 8 }}
+        {{- include "dra-driver-cpu.labels" . | nindent 8 }}
         tier: node
-        app: dracpu
-        k8s-app: dracpu
+        k8s-app: {{ include "dra-driver-cpu.name" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       hostNetwork: true
       priorityClassName: system-node-critical
-    {{- with .Values.tolerations }}
       tolerations:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
+        {{- toYaml .Values.tolerations | nindent 8 }}
       serviceAccountName: {{ include "dra-driver-cpu.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       hostPID: true
       initContainers:
       - name: enable-nri-and-cdi
@@ -52,7 +58,12 @@ spec:
         securityContext:
           privileged: true
         resources:
-          {{- toYaml .Values.resources | nindent 12 }}
+          requests:
+            {{- toYaml .Values.resources.requests | nindent 12 }}
+          {{- with .Values.resources.limits }}
+          limits:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         command:
         - /bin/sh
         - -c
@@ -104,24 +115,19 @@ spec:
         image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         livenessProbe:
-          httpGet:
-            path: /healthz
-            port: http
-          {{- with .Values.livenessProbe.initialDelaySeconds }}
-            initialDelaySeconds: {{ . }}
-          {{- end }}
+          {{- toYaml .Values.livenessProbe | nindent 10 }}
         readinessProbe:
-          httpGet:
-            path: /healthz
-            port: http
-          {{- with .Values.readinessProbe.initialDelaySeconds }}
-            initialDelaySeconds: {{ . }}
-          {{- end }}
+          {{- toYaml .Values.readinessProbe | nindent 10 }}
         ports:
           - name: http
             containerPort: 8080
         resources:
-          {{- toYaml .Values.resources | nindent 12 }}
+          requests:
+            {{- toYaml .Values.resources.requests | nindent 12 }}
+          {{- with .Values.resources.limits }}
+          limits:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         securityContext:
           capabilities:
             add: ["NET_ADMIN", "SYS_ADMIN"]

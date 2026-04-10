@@ -20,7 +20,7 @@ description: Kubernetes DRA driver for managing CPU resources with topology-awar
 type: application
 version: 0.1.0
 appVersion: main
-kubeVersion: 1.34.0
+kubeVersion: ">= 1.34.0"
 sources:
   - https://github.com/kubernetes-sigs/dra-driver-cpu
 home: https://github.com/kubernetes-sigs/dra-driver-cpu
