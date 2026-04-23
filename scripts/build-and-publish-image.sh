@@ -33,7 +33,7 @@ fi
 echo "Using IMG_TAG=${IMG_TAG}"
 
 # Pass the Cloud Build variables to the Makefile and enable multi-arch
-make push-image \
+make release \
 	STAGING_IMAGE_NAME="${IMG_PREFIX}/dra-driver-cpu" \
 	TAG="${IMG_TAG}" \
 	PLATFORMS="linux/amd64,linux/arm64"

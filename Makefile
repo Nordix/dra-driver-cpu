@@ -232,3 +232,39 @@ install-yq: $(OUT_DIR)  ## make sure the yq tool is available locally
 .PHONY: install-golangci-lint
 install-golangci-lint: $(OUT_DIR) ## make sure the golangci-lint tool is available locally
 	@hack/fetch-golangci-lint.sh $(OUT_DIR) $(GOLANGCI_LINT_VERSION)
+
+HELM_VERSION_SHA?=a2369ca71c0ef633bf6e4fccd66d634eb379b371 # v3.20.1
+.PHONY: ensure-helm
+ensure-helm: ## make sure helm is available locally
+	@if ! helm version >/dev/null 2>&1; then \
+		echo "Helm not found, installing helm@$(HELM_VERSION_SHA) ..."; \
+		go install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION_SHA); \
+	fi
+
+CHART_REGISTRY?=$(REGISTRY)/$(STAGING_REPO_NAME)/charts
+HELM_TAG?=$(shell git describe --tags --exact-match 2>/dev/null)
+# for helm chart version strip 'v' to have valid semver (example: v0.1.0 → 0.1.0)
+CHART_VERSION=$(shell echo "$(HELM_TAG)" | sed 's/^v//')
+
+.PHONY: helm-package
+helm-package: $(OUT_DIR) ## package the helm chart
+	@test -n "$(HELM_TAG)" || (echo "ERROR: not on an exact git tag, cannot package helm chart"; exit 1)
+	helm package deployment/helm/dra-driver-cpu \
+		--version "$(CHART_VERSION)" \
+		--app-version "$(HELM_TAG)" \
+		--destination $(OUT_DIR)
+
+.PHONY: helm-push
+helm-push: ensure-helm helm-package ## push the helm chart to the OCI registry
+	helm push $(OUT_DIR)/dra-driver-cpu-$(CHART_VERSION).tgz oci://$(CHART_REGISTRY)
+
+# The main release target, which pushes all images and helm charts.
+# Helm chart packaging and push is skipped when not on an exact git tag.
+.PHONY: release
+release: push-image ## push all images and helm charts (helm chart only on exact git tag)
+	@if [ -n "$(HELM_TAG)" ]; then \
+		echo "On tag $(HELM_TAG), packaging and pushing helm chart..."; \
+		$(MAKE) helm-push; \
+	else \
+		echo "Not on a tag, skipping helm chart push"; \
+	fi
