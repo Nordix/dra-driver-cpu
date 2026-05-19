@@ -147,6 +147,27 @@ However, this is only a partial replacement of the corresponding CPU Manager opt
 We hardcode the NUMA split and, unlike the cpumanager feature, it won't automatically adapt if the same claim is handled by a 1-NUMA, 2-NUMA or 4-NUMA machine;
 the claim would need to be updated or recreated manually.
 
+### Exposing PCIe roots
+
+The DRA CPU Driver can expose the PCIe root locality of CPU devices. It always expose the non-standard, driver-specific `dra.cpu/pcieRoots` (note plural) with this data.
+While devices don't expose the PCIe root locality, the reverse is true: the linux kernel does report the CPU local to PCIe devices; the driver tracks the PCIe host bridges,
+find the local CPUs for each device and reconstruct the CPU to PCIe root mapping so it can populate the attributes.
+
+The driver can also populate the standard `resource.kubernetes.io/pcieRoot` attribute with the same driver-specific attribute content, but this will require the
+Feature Gate `DRAListTypeAttributes` enabled in your cluster (see [KEP 5491](https://github.com/kubernetes/enhancements/issues/5491)).
+The DRA CPU Driver has no way to introspect the feature gate status. If you opt-in the `DRAListTypeAttributes`, you also need to set the environment variable
+`DRACPU_FORCE_PCIEROOT_LIST` so the driver can populate correctly the standard `resource.kubernetes.io/pcieRoot` variable.
+Failing to set the `DRACPU_FORCE_PCIEROOT_LIST` will cause the driver to **not publish the standard attribute**.
+
+When both the `DRAListTypeAttributes` feature becomes enabled by default and the DRA CPU driver will require the minimum corresponding kubernetes version,
+the `DRACPU_FORCE_PCIEROOT_LIST` environment variable will become unnecessary and the driver will publish the standard `resource.kubernetes.io/pcieRoot` attribute unconditionally.
+
+While `DRAListTypeAttributes` is alpha, you can enable the environment variable editing the dracpu daemonset or with
+
+```
+kubectl -n kube-system set env daemonset/dracpu DRACPU_FORCE_PCIEROOT_LIST=true
+```
+
 ## Workload Configuration Requirements
 
 Currently, Kubernetes has two separate systems for requesting CPU resources: standard requests in pod/container fields (`pod.spec.resources` or `pod.spec.containers[].resources`) and DRA `ResourceClaim`s.

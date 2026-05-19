@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -45,13 +46,14 @@ const (
 )
 
 var (
-	hostnameOverride string
-	kubeconfig       string
-	bindAddress      string
-	reservedCPUs     string
-	ready            atomic.Bool
-	cpuDeviceMode    string
-	groupBy          string
+	hostnameOverride  string
+	kubeconfig        string
+	bindAddress       string
+	reservedCPUs      string
+	ready             atomic.Bool
+	cpuDeviceMode     string
+	groupBy           string
+	forcePCIeRootList bool
 )
 
 type cpuDeviceModeValue struct {
@@ -200,12 +202,22 @@ func run(logger logr.Logger) error {
 	signal.Notify(signalCh, os.Interrupt, unix.SIGINT)
 
 	driverConfig := &driver.Config{
-		DriverName:       driverName,
-		NodeName:         nodeName,
-		ReservedCPUs:     reservedCPUSet,
-		CPUDeviceMode:    cpuDeviceMode,
-		CPUDeviceGroupBy: groupBy,
+		DriverName:        driverName,
+		NodeName:          nodeName,
+		ReservedCPUs:      reservedCPUSet,
+		CPUDeviceMode:     cpuDeviceMode,
+		CPUDeviceGroupBy:  groupBy,
+		ForcePCIeRootList: forcePCIeRootList,
 	}
+
+	if envVal, ok := os.LookupEnv(driver.EnvVarForcePCIeRootList); ok {
+		val, err := strconv.ParseBool(envVal)
+		if err == nil && val {
+			driverConfig.ForcePCIeRootList = true
+			logger.Info("ENV: forcing PCIe Root as string list (multiple roots)")
+		}
+	}
+
 	dracpu, asyncErr, err := driver.Start(ctx, clientset, driverConfig)
 	if err != nil {
 		return fmt.Errorf("driver failed to start: %w", err)

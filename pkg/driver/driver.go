@@ -51,6 +51,11 @@ const (
 	GROUP_BY_NUMA_NODE = "numanode"
 )
 
+// EnvForcePCIeRootList is the environment variable that forces the driver to
+// publish the standard resource.kubernetes.io/pcieRoot attribute as a list.
+// It will be removed once DRAListTypeAttributes is enabled by default.
+const EnvVarForcePCIeRootList = "DRACPU_FORCE_PCIEROOT_LIST"
+
 const (
 	kubeletPluginPath = "/var/lib/kubelet/plugins"
 	// maxAttempts indicates the number of times the driver will try to recover itself before failing
@@ -95,16 +100,19 @@ type CPUDriver struct {
 	reservedCPUs           cpuset.CPUSet
 	cpuDeviceMode          string
 	cpuDeviceGroupBy       string
+	forcePCIeRootList      bool
 	claimTracker           *store.ClaimTracker
+	cpuIDToPCIeDomain      map[int][]*device.PCIeDomain
 }
 
 // Config is the configuration for the CPUDriver.
 type Config struct {
-	DriverName       string
-	NodeName         string
-	ReservedCPUs     cpuset.CPUSet
-	CPUDeviceMode    string
-	CPUDeviceGroupBy string
+	DriverName        string
+	NodeName          string
+	ReservedCPUs      cpuset.CPUSet
+	CPUDeviceMode     string
+	CPUDeviceGroupBy  string
+	ForcePCIeRootList bool
 }
 
 // Start creates and starts a new CPUDriver.
@@ -120,9 +128,11 @@ func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) 
 		deviceNameToCPUID:      make(map[string]int),
 		deviceNameToSocketID:   make(map[string]int),
 		deviceNameToNUMANodeID: make(map[string]int),
+		cpuIDToPCIeDomain:      make(map[int][]*device.PCIeDomain),
 		reservedCPUs:           config.ReservedCPUs,
 		cpuDeviceMode:          config.CPUDeviceMode,
 		cpuDeviceGroupBy:       config.CPUDeviceGroupBy,
+		forcePCIeRootList:      config.ForcePCIeRootList,
 		claimTracker:           store.NewClaimTracker(),
 	}
 	sysfs := os.DirFS(device.SysfsRoot).(device.SysFS)
@@ -156,6 +166,9 @@ func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) 
 	if !extraCPUs.IsEmpty() {
 		logger.Info("PCIe domains: detected cpus not local to any detected PCIe Root", "CPUs", extraCPUs.String())
 	}
+
+	plugin.cpuIDToPCIeDomain = device.MapCPUsToPCIeDomain(plugin.pcieDomains, onlineCPUs)
+	logger.Info("mapped CPUs to PCIe domains", "count", len(plugin.cpuIDToPCIeDomain))
 
 	plugin.cpuAllocationStore = store.NewCPUAllocation(plugin.cpuTopology, config.ReservedCPUs)
 	plugin.podConfigStore = store.NewPodConfig()

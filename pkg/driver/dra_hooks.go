@@ -33,6 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/cpuset"
@@ -86,6 +88,10 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 				AttributeNumCPUs:    {IntValue: ptr.To(availableCPUsInSocket)},
 				AttributeSMTEnabled: {BoolValue: ptr.To(cp.cpuTopology.SMTEnabled)},
 			}
+			cpus := topo.CPUDetails.CPUsInSockets(socketID)
+			cp.setPCIeRootsAttribute(deviceAttrs, cpus.UnsortedList()...)
+			// in grouped mode we expect to have multiple roots per device, therefore
+			// it is pretty pointless to report a single PCIE root value.
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceName,
@@ -123,6 +129,8 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 				AttributeNumCPUs:    {IntValue: ptr.To(availableCPUsInNUMANode)},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(numaID))
+			cpus := topo.CPUDetails.CPUsInNUMANodes(numaID)
+			cp.setPCIeRootsAttribute(deviceAttrs, cpus.UnsortedList()...)
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceName,
@@ -201,6 +209,7 @@ func (cp *CPUDriver) createCPUDeviceSlices() [][]resourceapi.Device {
 				AttributeCPUID:      {IntValue: ptr.To(int64(cpu.CpuID))},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(cpu.NUMANodeID))
+			cp.setPCIeRootsAttribute(deviceAttrs, cpu.CpuID)
 
 			deviceName := fmt.Sprintf("%s%03d", cpuDevicePrefix, devId)
 			devId++
@@ -489,5 +498,22 @@ func (cp *CPUDriver) HandleError(ctx context.Context, err error, msg string) {
 		)
 		ctxlog.Flush()
 		os.Exit(1)
+	}
+}
+
+func (cp *CPUDriver) setPCIeRootsAttribute(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, cpuIDs ...int) {
+	pcieRoots := sets.New[string]()
+	for _, cpuID := range cpuIDs {
+		for _, dom := range cp.cpuIDToPCIeDomain[cpuID] {
+			pcieRoots.Insert(dom.Root())
+		}
+	}
+	if pcieRoots.Len() == 0 {
+		return
+	}
+	rootList := sets.List(pcieRoots)
+	attrs[AttributePCIeRoots] = resourceapi.DeviceAttribute{StringValues: rootList}
+	if cp.forcePCIeRootList {
+		attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{StringValues: rootList}
 	}
 }
