@@ -147,6 +147,86 @@ However, this is only a partial replacement of the corresponding CPU Manager opt
 We hardcode the NUMA split and, unlike the cpumanager feature, it won't automatically adapt if the same claim is handled by a 1-NUMA, 2-NUMA or 4-NUMA machine;
 the claim would need to be updated or recreated manually.
 
+### Exposing PCIe roots
+
+The DRA CPU Driver can expose the PCIe root locality of CPU devices. It always expose the non-standard, driver-specific `dra.cpu/pcieRoots` (note plural) with this data.
+While devices don't expose the PCIe root locality, the reverse is true: the linux kernel does report the CPU local to PCIe buses and devices; the driver scan the PCIe
+buses and tracks the PCIe host bridges CPU locality; from there, we can reconstruct the CPU to PCIe root mapping and then populate the attributes.
+
+Because how the linux kernel retrieves the data from the firmware, and because how the ACPI data reports locality, the PCIe root mapping acts as coarse alignment hint
+and it is not consumed by the internal CPU selection when the drivers operates in grouped mode.
+While the driver can consume the PCIe root locality data in its internal CPU selection, the locality granularity hard depends on the kernel-provided data.
+These limitation are planned to be addressed (CPU selection input) and mitigated (coarse granularity) in future versions of the driver.
+
+The driver can also populate the standard `resource.kubernetes.io/pcieRoot` attribute with the same driver-specific attribute content, but this will require the
+Feature Gate `DRAListTypeAttributes` enabled in your cluster (see [KEP 5491](https://github.com/kubernetes/enhancements/issues/5491)).
+The DRA CPU Driver has no way to introspect the feature gate status. If you opt-in the `DRAListTypeAttributes`, you also need to set the environment variable
+`DRACPU_FORCE_PCIEROOT_LIST_ATTRIBUTE` so the driver can populate correctly the standard `resource.kubernetes.io/pcieRoot` variable.
+Failing to set the `DRACPU_FORCE_PCIEROOT_LIST_ATTRIBUTE` will cause the driver to **not publish the standard attribute**.
+
+When both the `DRAListTypeAttributes` feature becomes enabled by default and the DRA CPU driver will require the minimum corresponding kubernetes version,
+the `DRACPU_FORCE_PCIEROOT_LIST_ATTRIBUTE` environment variable will become unnecessary and the driver will publish the standard `resource.kubernetes.io/pcieRoot`
+attribute unconditionally.
+
+While `DRAListTypeAttributes` is alpha, you can enable the environment variable editing the dracpu daemonset or with
+
+```
+kubectl -n kube-system set env daemonset/dracpu DRACPU_FORCE_PCIEROOT_LIST_ATTRIBUTE=true
+```
+
+This is an example of a resource slice produced by a driver running in a kind CI cluster with `DRACPU_FORCE_PCIEROOT_LIST_ATTRIBUTE=true`, grouped mode, grouping by numa nodes:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceSlice
+metadata:
+  creationTimestamp: "2026-05-29T14:09:35Z"
+  generateName: 00000-dra.cpu-dra-driver-cpu-worker-
+  generation: 1
+  name: 00000-dra.cpu-dra-driver-cpu-worker-v7pdl
+  ownerReferences:
+  - apiVersion: v1
+    controller: true
+    kind: Node
+    name: dra-driver-cpu-worker
+    uid: 80fbb23c-ae26-44b4-a21a-dce4037db82d
+  resourceVersion: "651"
+  uid: 08664794-f96b-43fd-b8ce-233c7bd172f6
+spec:
+  devices:
+  - allowMultipleAllocations: true
+    attributes:
+      dra.cpu/numCPUs:
+        int: 31
+      dra.cpu/numaNodeID:
+        int: 0
+      dra.cpu/pcieRoots:
+        strings:
+        - pci0000:00
+      dra.cpu/smtEnabled:
+        bool: true
+      dra.cpu/socketID:
+        int: 0
+      dra.net/numaNode:
+        int: 0
+      resource.kubernetes.io/pcieRoot:
+        strings:
+        - pci0000:00
+    capacity:
+      dra.cpu/cpu:
+        value: "31"
+    name: cpudevnuma000
+  driver: dra.cpu
+  nodeName: dra-driver-cpu-worker
+  pool:
+    generation: 1
+    name: dra-driver-cpu-worker
+    resourceSliceCount: 1
+```
+
+Note the amount of PCIe roots may vary and depends on both the physical wiring of the system and on the fact slots or populated or not;
+most firmware don't enumerate PCIe buses - and therefore don't expose PCIe roots - if no devices are connected.
+
 ## Workload Configuration Requirements
 
 Currently, Kubernetes has two separate systems for requesting CPU resources: standard requests in pod/container fields (`pod.spec.resources` or `pod.spec.containers[].resources`) and DRA `ResourceClaim`s.

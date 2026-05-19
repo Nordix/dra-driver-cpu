@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -45,13 +46,14 @@ const (
 )
 
 var (
-	hostnameOverride string
-	kubeconfig       string
-	bindAddress      string
-	reservedCPUs     string
-	ready            atomic.Bool
-	cpuDeviceMode    string
-	groupBy          string
+	hostnameOverride  string
+	kubeconfig        string
+	bindAddress       string
+	reservedCPUs      string
+	ready             atomic.Bool
+	cpuDeviceMode     string
+	groupBy           string
+	forcePCIeRootList bool
 )
 
 type cpuDeviceModeValue struct {
@@ -200,12 +202,27 @@ func run(logger logr.Logger) error {
 	signal.Notify(signalCh, os.Interrupt, unix.SIGINT)
 
 	driverConfig := &driver.Config{
-		DriverName:       driverName,
-		NodeName:         nodeName,
-		ReservedCPUs:     reservedCPUSet,
-		CPUDeviceMode:    cpuDeviceMode,
-		CPUDeviceGroupBy: groupBy,
+		DriverName:        driverName,
+		NodeName:          nodeName,
+		ReservedCPUs:      reservedCPUSet,
+		CPUDeviceMode:     cpuDeviceMode,
+		CPUDeviceGroupBy:  groupBy,
+		ForcePCIeRootList: forcePCIeRootList,
 	}
+
+	// the environment variable is the only supported way to force the driver to
+	// expose string lists with the standard attribute. This is because the DRA
+	// feature we depend on `DRAListTypeAttributes` is alpha iun 1.36 and needs
+	// to be enabled. Adding a command line flag would require a deprecation cycle;
+	// Environment variables are a weaker signal easier to deprecate.
+	if envVal, ok := os.LookupEnv(driver.EnvVarForcePCIeRootList); ok {
+		val, err := strconv.ParseBool(envVal)
+		if err == nil && val {
+			driverConfig.ForcePCIeRootList = true
+			logger.Info("ENV: forcing PCIe Root as string list (multiple roots)")
+		}
+	}
+
 	dracpu, asyncErr, err := driver.Start(ctx, clientset, driverConfig)
 	if err != nil {
 		return fmt.Errorf("driver failed to start: %w", err)

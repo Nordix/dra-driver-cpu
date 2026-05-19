@@ -33,6 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/cpuset"
@@ -87,6 +89,10 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 				AttributeNumCPUs:    {IntValue: ptr.To(availableCPUsInSocket)},
 				AttributeSMTEnabled: {BoolValue: ptr.To(cp.cpuTopology.SMTEnabled)},
 			}
+			// PCIeDomain lacks a SocketID field. This is because we can't do a direct mapping
+			// using sysfs data - we will need to correlate. Therefore we can't filter domains
+			// directly like we do for NUMA nodes. Fall back to the CPU-based lookup.
+			cp.setPCIeRootsAttributeByNUMANode(deviceAttrs, topo.CPUDetails.NUMANodesInSockets(socketID).UnsortedList()...)
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceName,
@@ -124,6 +130,7 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 				AttributeNumCPUs:    {IntValue: ptr.To(availableCPUsInNUMANode)},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(numaID))
+			cp.setPCIeRootsAttributeByNUMANode(deviceAttrs, numaID)
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceName,
@@ -202,6 +209,7 @@ func (cp *CPUDriver) createCPUDeviceSlices() [][]resourceapi.Device {
 				AttributeCPUID:      {IntValue: ptr.To(int64(cpu.CpuID))},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(cpu.NUMANodeID))
+			cp.setPCIeRootsAttribute(deviceAttrs, cpu.CpuID)
 
 			deviceName := fmt.Sprintf("%s%03d", cpuDevicePrefix, devId)
 			devId++
@@ -491,4 +499,36 @@ func (cp *CPUDriver) HandleError(ctx context.Context, err error, msg string) {
 		ctxlog.Flush()
 		os.Exit(1)
 	}
+}
+
+func (cp *CPUDriver) setPCIeRootsAttribute(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, cpuIDs ...int) {
+	pcieRoots := sets.New[string]()
+	for _, cpuID := range cpuIDs {
+		for _, dom := range cp.cpuIDToPCIeDomain[cpuID] {
+			pcieRoots.Insert(dom.Root())
+		}
+	}
+	cp.applyPCIeRootsAttribute(attrs, pcieRoots)
+}
+
+func (cp *CPUDriver) setPCIeRootsAttributeByNUMANode(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, numaNodeIDs ...int) {
+	pcieRoots := sets.New[string]()
+	for idx := range cp.pcieDomains {
+		if slices.Contains(numaNodeIDs, cp.pcieDomains[idx].NUMANode) {
+			pcieRoots.Insert(cp.pcieDomains[idx].Root())
+		}
+	}
+	cp.applyPCIeRootsAttribute(attrs, pcieRoots)
+}
+
+func (cp *CPUDriver) applyPCIeRootsAttribute(attrs map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, pcieRoots sets.Set[string]) {
+	if pcieRoots.Len() == 0 {
+		return
+	}
+	rootList := sets.List(pcieRoots)
+	attrs[AttributePCIeRoots] = resourceapi.DeviceAttribute{StringValues: rootList}
+	if !cp.forcePCIeRootList {
+		return
+	}
+	attrs[deviceattribute.StandardDeviceAttributePCIeRoot] = resourceapi.DeviceAttribute{StringValues: rootList}
 }
