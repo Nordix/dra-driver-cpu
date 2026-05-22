@@ -181,7 +181,7 @@ endef
 dist:
 	@mkdir -p dist
 
-manifests: dist install-yq ## create the install manifest
+manifests: dist dep-install-yq ## create the install manifest
 	@cd dist && cp -a ../manifests/base/*.part.yaml .
 ifeq ($(OVERRIDE_IMAGE),true)
 	@$(YQ) -i '.spec.template.spec.containers[0].image = "${IMAGE}"' dist/daemonset-dracpu.part.yaml
@@ -197,7 +197,7 @@ endif
 		> dist/install.yaml
 	@rm dist/*.part.yaml
 
-ci-manifests: install-yq ## create the CI install manifests
+ci-manifests: dep-install-yq ## create the CI install manifests
 ifneq ($(DRACPU_E2E_VERBOSE),)
 	@echo "setting up manifests for mode=$(DRACPU_E2E_CPU_DEVICE_MODE)"
 endif
@@ -227,21 +227,30 @@ test-e2e: ## run e2e test against an existing configured cluster
 
 test-e2e-kind: ci-kind-setup test-e2e ## run e2e test against a purpose-built kind cluster
 
-lint:  ## run the linter against the codebase
+lint: dep-install-golangci-lint ## run the linter against the codebase
 	$(GOLANGCI_LINT) run ./... $(GOLANGCI_LINT_EXTRA_ARGS)
 
-# dependencies
-.PHONY: install-yq
-install-yq: $(OUT_DIR)  ## make sure the yq tool is available locally
-	@# TODO: generalize platform/os?
-	@if [ ! -f $(YQ) ]; then\
-	       curl -L https://github.com/mikefarah/yq/releases/download/v$(YQ_VERSION)/yq_$(OS)_$(ARCH) -o $(YQ);\
-               chmod 0755 $(YQ);\
-	fi
+##@ dependencies
 
-.PHONY: install-golangci-lint
-install-golangci-lint: $(OUT_DIR) ## make sure the golangci-lint tool is available locally
+.PHONY: dep-install-yq
+dep-install-yq: $(OUT_DIR)  ## Install yq into bin/ if not already present, reusing system binary if available
+	@[ ! -f $(YQ) ] && { \
+		command -v yq >/dev/null 2>&1 && { \
+			ln -sf $$(command -v yq) $(YQ) ;\
+			echo "reusing system yq" ;\
+		} || { \
+			echo "fetching yq v$(YQ_VERSION)" ;\
+			curl -sSL "https://github.com/mikefarah/yq/releases/download/v$(YQ_VERSION)/yq_$(OS)_$(ARCH)" -o $(YQ) ;\
+			chmod 0755 $(YQ) ;\
+		}; \
+	} || true
+
+.PHONY: dep-install-golangci-lint
+dep-install-golangci-lint: $(OUT_DIR)  ## Install golangci-lint into bin/ if not already present, reusing system binary if available
 	@hack/fetch-golangci-lint.sh $(OUT_DIR) $(GOLANGCI_LINT_VERSION)
+
+.PHONY: dep-install-all
+dep-install-all: dep-install-yq dep-install-golangci-lint ## install all soft-dep binaries into bin/
 
 helm-lint: ## lint helm chart with strict mode
 	helm lint --strict deployment/helm/dra-driver-cpu
@@ -268,17 +277,9 @@ helm-schema-check: helm-schema ## verify values.schema.json is up to date; fails
 	@git diff --exit-code deployment/helm/dra-driver-cpu/values.schema.json || \
 		(echo "ERROR: values.schema.json is out of date. Run 'make helm-schema' to update it." && exit 1)
 CHART_REGISTRY?=$(REGISTRY)/$(STAGING_REPO_NAME)/charts
-HELM_VERSION_SHA?=a2369ca71c0ef633bf6e4fccd66d634eb379b371 # v3.20.1
-
-.PHONY: ensure-helm
-ensure-helm:
-	@if ! helm version >/dev/null 2>&1; then \
-		echo "Helm not found, installing helm@$(HELM_VERSION_SHA) ..."; \
-		go install helm.sh/helm/v3/cmd/helm@$(HELM_VERSION_SHA); \
-	fi
 
 .PHONY: helm-package
-helm-package: ensure-helm ## package helm chart for release
+helm-package: ## package helm chart for release
 	helm package deployment/helm/dra-driver-cpu \
 		--version "$(CHART_VERSION)" \
 		--app-version "$(TAG)" \
