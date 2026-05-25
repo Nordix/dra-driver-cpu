@@ -31,6 +31,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
+	"github.com/kubernetes-sigs/dra-driver-cpu/internal/overlayfs"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sys/unix"
@@ -54,6 +56,7 @@ var (
 	cpuDeviceMode     string
 	groupBy           string
 	forcePCIeRootList bool
+	sysfsOverlay      string
 )
 
 type cpuDeviceModeValue struct {
@@ -111,6 +114,7 @@ func init() {
 	flag.StringVar(&reservedCPUs, "reserved-cpus", "", "cpuset of CPUs to be excluded from ResourceSlice.")
 	flag.Var(newCPUDeviceModeValue(&cpuDeviceMode, driver.CPU_DEVICE_MODE_GROUPED), "cpu-device-mode", "Sets the mode for exposing CPU devices. 'grouped' exposes a single device per socket or numa node (based on --group-by). 'individual' exposes each CPU as a separate device.")
 	flag.Var(newGroupByValue(&groupBy, driver.GROUP_BY_NUMA_NODE), "group-by", "When --cpu-device-mode=grouped, sets the criteria for grouping CPUs. Can be set to 'socket' or 'numanode'.")
+	flag.StringVar(&sysfsOverlay, "sysfs-overlay", "", "Path to sysfs attribute overrides YAML.")
 }
 
 func main() {
@@ -218,7 +222,16 @@ func run(logger logr.Logger) error {
 		}
 	}
 
-	dracpu, asyncErr, err := driver.Start(ctx, clientset, driverConfig)
+	sysfs := os.DirFS(device.SysfsRoot).(device.SysFS)
+	if sysfsOverlay != "" {
+		ofs, err := loadSysfsOverlay(sysfsOverlay, sysfs, logger)
+		if err != nil {
+			return fmt.Errorf("failed to load sysfs overlay %q: %w", sysfsOverlay, err)
+		}
+		sysfs = ofs
+	}
+
+	dracpu, asyncErr, err := driver.Start(ctx, clientset, driverConfig, sysfs)
 	if err != nil {
 		return fmt.Errorf("driver failed to start: %w", err)
 	}
@@ -246,6 +259,23 @@ func run(logger logr.Logger) error {
 		fatalErr = errors.Join(fatalErr, fmt.Errorf("HTTP server shutdown error: %w", serverErr))
 	}
 	return fatalErr
+}
+
+func loadSysfsOverlay(path string, base device.SysFS, logger logr.Logger) (*overlayfs.FS, error) {
+	src, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+	ofs, err := overlayfs.FromYAML(base, src)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range ofs.Paths() {
+		data, _ := ofs.Get(p)
+		logger.Info("OVERLAY", "name", p, "value", string(data))
+	}
+	return ofs, nil
 }
 
 func printVersion(logger logr.Logger) {

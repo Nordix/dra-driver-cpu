@@ -168,6 +168,31 @@ While `DRAListTypeAttributes` is alpha, you can enable the environment variable 
 kubectl -n kube-system set env daemonset/dracpu DRACPU_FORCE_PCIEROOT_LIST=true
 ```
 
+#### Overriding PCIe root locality data
+
+You can override the PCIe root locality data by providing custom data in the same sysfs reporting format as YAML document using
+the `--sysfs-overlay` command line. The driver will load the data at startup and that data will completely replace (overlay)
+data read from the corresponding files from the machine sysfs.
+
+This enables to provide more granular, out-of-bound localityt information that the firmware and kernel currently don't provide.
+
+Example YAML (overlay.yaml):
+
+```
+files:
+  devices/system/cpu/online:
+    data: "0-7"
+  bus/pci/devices/0000:00:1f.0/local_cpulist:
+    data: |
+      4-7
+```
+
+Paths are relative to sysfs root (/sys). The data field replaces the file content. In this example, CPUs 4-7 are reported as local
+to PCI device 0000:00:1f.0. You'd pass the file with `--sysfs-overlay=path/to/overlay.yaml`.
+
+Note that the paths are intentionally system-specific and must match the devices you have in your machine.
+A more generic overlay support is out of scope and not planned.
+
 ## Workload Configuration Requirements
 
 Currently, Kubernetes has two separate systems for requesting CPU resources: standard requests in pod/container fields (`pod.spec.resources` or `pod.spec.containers[].resources`) and DRA `ResourceClaim`s.

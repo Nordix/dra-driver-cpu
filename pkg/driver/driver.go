@@ -115,8 +115,13 @@ type Config struct {
 	ForcePCIeRootList bool
 }
 
-// Start creates and starts a new CPUDriver.
-func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) (*CPUDriver, <-chan error, error) {
+// Start creates and starts a new CPUDriver. sysfs is the filesystem used to
+// probe /sys and must not be nil; the caller is responsible for constructing.
+func Start(ctx context.Context, clientset kubernetes.Interface, config *Config, sysfs device.SysFS) (*CPUDriver, <-chan error, error) {
+	if sysfs == nil {
+		return nil, nil, fmt.Errorf("sysfs must not be nil")
+	}
+
 	var logger logr.Logger
 	ctx, logger = ctxlog.WithValues(ctx, "driver", config.DriverName)
 
@@ -135,8 +140,6 @@ func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) 
 		forcePCIeRootList:      config.ForcePCIeRootList,
 		claimTracker:           store.NewClaimTracker(),
 	}
-	sysfs := os.DirFS(device.SysfsRoot).(device.SysFS)
-
 	onlineCPUs, err := device.OnlineCPUs(logger, sysfs)
 	if err != nil {
 		return nil, asyncErr, fmt.Errorf("failed to get online CPUs: %w", err)
