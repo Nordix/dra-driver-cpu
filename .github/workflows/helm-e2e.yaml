@@ -55,6 +55,8 @@ jobs:
             --set image.repository="${IMAGE}" \
             --set image.tag="${TAG}" \
             --set image.pullPolicy=Never
+          kubectl --kubeconfig /tmp/kubeconfig-dra-driver-cpu \
+            -n kube-system set env daemonset/dracpu DRACPU_FORCE_PCIEROOT_LIST=true
 
       - name: Wait for resourceSlices
         run: KUBECONFIG=/tmp/kubeconfig-dra-driver-cpu hack/ci/wait-resourcelices.sh

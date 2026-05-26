@@ -210,6 +210,15 @@ func findArgInContainer(container *v1.Container, prefix string) (string, bool) {
 	return "", false
 }
 
+func findEnvInContainer(container *v1.Container, name string) (string, bool) {
+	for _, env := range container.Env {
+		if env.Name == name {
+			return env.Value, true
+		}
+	}
+	return "", false
+}
+
 func makeTesterPodWithNamedClaim(ns, image, claimName string, nodeName string) *v1.Pod {
 	ginkgo.GinkgoHelper()
 	cpuQty := resource.NewQuantity(2, resource.DecimalSI)
