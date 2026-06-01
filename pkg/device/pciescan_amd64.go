@@ -80,30 +80,33 @@ func ScanPCIeDevices(logger logr.Logger, sysfs SysFS, processDevice func(PCIeDev
 }
 
 func PCIeDomainsFromFS(logger logr.Logger, sysfs SysFS) ([]PCIeDomain, error) {
-	// we use a map (not a slice) to deduplicate PCIeRoot domains.
-	// During the PCIe device iteration, we should ideally perform a precise tracking
-	// and find the PCIe root downstream ports for each domain.
-	// Instead, we take a simpler approach and look for the PCI-to-PCI bridges.
-	// The roots are, per PCIe docs, a subset of the bridges we identified.
-	// We start with a simplified scan, depending on the fact that the linux kernel is
-	// expected to report the same local cpulist for all the devices belonging to the
-	// same root complex.
-	// But the, we can turn out with bogus duplicate domains, so we need a final
-	// deduplication step.
+	// We use a map (not a slice) to deduplicate PCIeRoot domains.
+	// We scan all PCI devices and use GetPCIeRootAttributeByPCIBusID to walk
+	// up the sysfs tree to find the root complex for each device. Multiple
+	// devices under the same root complex produce the same key, so the map
+	// deduplication is harmless.
+	//
+	// We intentionally do NOT restrict to PCI-to-PCI bridges (class 06:04)
+	// because some root complexes have devices connected directly on the root
+	// bus with no intermediate bridge (e.g. Intel QAT/DSA accelerators on
+	// certain NUMA nodes). Restricting to bridges would silently miss those
+	// root complexes.
 	domains := make(map[string]PCIeDomain)
 
 	err := ScanPCIeDevices(logger, sysfs, func(pciDev PCIeDevice) error {
-		if !isPCIBridge(pciDev) {
-			return nil
-		}
-
 		plogger := logger.WithValues("device", pciDev.String())
 
-		plogger.V(2).Info("PCIe: candidate bridge found")
+		plogger.V(6).Info("PCIe: candidate device found")
 
 		pcieRootAttr, err := deviceattribute.GetPCIeRootAttributeByPCIBusID(pciDev.Address, deviceattribute.WithFS(sysfs))
 		if err != nil {
 			return err
+		}
+
+		// Skip if we already have this root complex; all devices under the
+		// same root report identical local_cpulist and numa_node.
+		if _, exists := domains[*pcieRootAttr.Value.StringValue]; exists {
+			return nil
 		}
 
 		cpuData, err := fs.ReadFile(sysfs, filepath.Join(pciDev.SysfsPath(), "local_cpulist"))
@@ -114,7 +117,7 @@ func PCIeDomainsFromFS(logger logr.Logger, sysfs SysFS) ([]PCIeDomain, error) {
 		if err != nil {
 			return err
 		}
-		plogger.V(4).Info("PCIe: candidate bridge", "localCPUs", localCPUs.String())
+		plogger.V(4).Info("PCIe: candidate device", "localCPUs", localCPUs.String())
 
 		numaData, err := fs.ReadFile(sysfs, filepath.Join(pciDev.SysfsPath(), "numa_node"))
 		if err != nil {
@@ -124,7 +127,7 @@ func PCIeDomainsFromFS(logger logr.Logger, sysfs SysFS) ([]PCIeDomain, error) {
 		if err != nil {
 			return err
 		}
-		plogger.V(4).Info("PCIe: candidate bridge", "numaNode", numaNode)
+		plogger.V(4).Info("PCIe: candidate device", "numaNode", numaNode)
 
 		pcd := PCIeDomain{
 			PCIeRootAttr: pcieRootAttr,
@@ -132,7 +135,7 @@ func PCIeDomainsFromFS(logger logr.Logger, sysfs SysFS) ([]PCIeDomain, error) {
 			NUMANode:     numaNode,
 		}
 		domains[pcd.Root()] = pcd
-		plogger.V(2).Info("PCIe: candidate bridge mapped to domain", "domain", pcd.String())
+		plogger.V(2).Info("PCIe: device mapped to domain", "domain", pcd.String())
 
 		return nil
 	})
@@ -145,17 +148,6 @@ func PCIeDomainsFromFS(logger logr.Logger, sysfs SysFS) ([]PCIeDomain, error) {
 		return strings.Compare(a.Root(), b.Root())
 	})
 	return doms, nil
-}
-
-// isPCIBridge checks if a device is a PCI-to-PCI bridge. The PCIe Roots are a subset of these.
-// We check this class of devices because these are always present in the systems, while we can't
-// predict which class of devices users will be available, or user interested to.
-// Reference: https://pci-ids.ucw.cz/
-func isPCIBridge(dev PCIeDevice) bool {
-	// class 06: Bridge
-	// subclass 04: PCI bridge
-	// TODO: what about subclasses 09 (semi-transparent PCI bridge) and 0a (Infiniband to PCI)?
-	return dev.ClassID == "06" && dev.SubclassID == "04"
 }
 
 // isValidPCIAddress checks if s matches the format

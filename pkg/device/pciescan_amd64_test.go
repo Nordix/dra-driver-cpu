@@ -17,6 +17,7 @@ limitations under the License.
 package device
 
 import (
+	"io/fs"
 	"sort"
 	"testing"
 	"testing/fstest"
@@ -54,6 +55,24 @@ func TestPCIeDomainsFromFS(t *testing.T) {
 				},
 			},
 		},
+		{
+			// Regression test: a root complex whose only device is directly on
+			// the root bus with no intermediate PCI-to-PCI bridge must still be
+			// discovered. This mirrors Intel QAT/DSA accelerators on certain
+			// NUMA nodes (e.g. pci0000:f3 on a 2-socket Intel Xeon server).
+			name: "device directly on root bus, no bridge",
+			fs:   makeDirectDeviceOnRootBusFixture(),
+			want: []PCIeDomain{
+				{
+					PCIeRootAttr: deviceattribute.DeviceAttribute{
+						Name:  deviceattribute.StandardDeviceAttributePCIeRoot,
+						Value: resourceapi.DeviceAttribute{StringValue: ptr.To("pci0000:f3")},
+					},
+					LocalCPUs: mustParseCPUSet(t, "1,3,5,7"),
+					NUMANode:  1,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -75,5 +94,30 @@ func TestPCIeDomainsFromFS(t *testing.T) {
 				t.Errorf("PCIeDomain mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// makeDirectDeviceOnRootBusFixture simulates a root complex (pci0000:f3) with
+// a co-processor (Intel QAT, class 0b:40) sitting directly on the root bus —
+// no intermediate PCI-to-PCI bridge. This mirrors the topology seen on Intel
+// Xeon servers where some NUMA nodes expose accelerators without a Root Port.
+func makeDirectDeviceOnRootBusFixture() fstest.MapFS {
+	return fstest.MapFS{
+		"bus/pci/devices/0000:f3:00.0": &fstest.MapFile{
+			Data: []byte("../../../devices/pci0000:f3/0000:f3:00.0"),
+			Mode: fs.ModeSymlink,
+		},
+		"devices/pci0000:f3/0000:f3:00.0/class": &fstest.MapFile{
+			Data: []byte("0x0b4000\n"), // Co-processor: class 0b, subclass 40
+		},
+		"devices/pci0000:f3/0000:f3:00.0/local_cpulist": &fstest.MapFile{
+			Data: []byte("1,3,5,7\n"),
+		},
+		"devices/pci0000:f3/0000:f3:00.0/numa_node": &fstest.MapFile{
+			Data: []byte("1\n"),
+		},
+		"devices/system/cpu/online": &fstest.MapFile{
+			Data: []byte("0-7\n"),
+		},
 	}
 }
