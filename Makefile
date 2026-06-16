@@ -115,13 +115,12 @@ HELM_COMMON_ARGS := \
 # required to enable buildx
 export DOCKER_CLI_EXPERIMENTAL=enabled
 image: ## docker build load
-	docker build . -t ${IMAGE_REPO} --load
+	docker build . -t ${IMAGE} --load
 
 build-image: ## build image
 	docker buildx build . \
 		--platform="${LOCAL_PLATFORM}" \
 		--tag="${IMAGE}" \
-		--tag="${IMAGE_LATEST}" \
 		--tag="${IMAGE_CI}" \
 		--load
 
@@ -148,7 +147,7 @@ kind-cluster: ensure-kind-node-image ## create kind cluster
 	kind create cluster --name ${CLUSTER_NAME} --image=kindest/node:$(KIND_K8S_VERSION) --config hack/kind.yaml
 
 kind-load-image: build-image  ## load the current container image into kind
-	kind load docker-image ${IMAGE} ${IMAGE_LATEST} --name ${CLUSTER_NAME}
+	kind load docker-image ${IMAGE} --name ${CLUSTER_NAME}
 
 kind-uninstall-cpu-dra: ## remove cpu dra from kind cluster
 	$(HELM) uninstall dra-driver-cpu --namespace kube-system || true
