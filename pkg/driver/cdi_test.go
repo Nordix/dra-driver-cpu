@@ -45,6 +45,7 @@ func TestAddDevice(t *testing.T) {
 		name          string
 		deviceName    string
 		envVar        string
+		cpusetStr     string
 		simulateErr   bool
 		expectedError string
 	}{
@@ -52,12 +53,14 @@ func TestAddDevice(t *testing.T) {
 			name:        "successfully writes a new device spec to disk",
 			deviceName:  "claim-cpu-add-success",
 			envVar:      "CPU=2,3",
+			cpusetStr:   "2,3",
 			simulateErr: false,
 		},
 		{
-			name:          "fails to writes pec to disk",
+			name:          "fails to write spec to disk",
 			deviceName:    "claim-cpu-add-error",
 			envVar:        "CPU=2,3",
+			cpusetStr:     "2,3",
 			simulateErr:   true,
 			expectedError: "failed to write CDI spec",
 		},
@@ -67,21 +70,24 @@ func TestAddDevice(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			logger := testr.New(t)
 			tempCDIDir := t.TempDir()
+			tempMountDir := t.TempDir()
 
 			if tc.simulateErr {
+				// Make cdiDir a file so the CDI spec write fails.
 				tempFile := filepath.Join(tempCDIDir, "invalid-dir-file")
 				err := os.WriteFile(tempFile, []byte(""), 0600)
 				require.NoError(t, err)
 				tempCDIDir = tempFile
 			}
 
-			mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir)
+			mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir, tempMountDir)
 			require.NoError(t, err)
 
 			expectedSpecName := mgr.getSpecName(tc.deviceName)
-			expectedFilePath := filepath.Join(tempCDIDir, expectedSpecName)
+			expectedSpecFilePath := filepath.Join(tempCDIDir, expectedSpecName)
+			expectedHostCPUSetPath := mgr.cpusetHostPath(tc.deviceName)
 
-			err = mgr.AddDevice(logger, tc.deviceName, []string{tc.envVar})
+			err = mgr.AddDevice(logger, tc.deviceName, []string{tc.envVar}, tc.cpusetStr)
 
 			if tc.expectedError != "" {
 				require.Error(t, err)
@@ -91,8 +97,13 @@ func TestAddDevice(t *testing.T) {
 
 			require.NoError(t, err)
 
-			_, err = os.Stat(expectedFilePath)
+			_, err = os.Stat(expectedSpecFilePath)
 			require.NoError(t, err, "expected CDI spec file to be created on disk")
+
+			// Verify the cpuset file was written with correct content.
+			cpusetContent, err := os.ReadFile(expectedHostCPUSetPath)
+			require.NoError(t, err, "expected cpuset file to be created on disk")
+			require.Equal(t, tc.cpusetStr, string(cpusetContent))
 
 			expectedSpec := &cdiSpec.Spec{
 				Version: cdiSpecVersion,
@@ -102,6 +113,13 @@ func TestAddDevice(t *testing.T) {
 						Name: tc.deviceName,
 						ContainerEdits: cdiSpec.ContainerEdits{
 							Env: []string{tc.envVar},
+							Mounts: []*cdiSpec.Mount{
+								{
+									HostPath:      expectedHostCPUSetPath,
+									ContainerPath: cdiContainerMountPath,
+									Options:       []string{"ro", "bind"},
+								},
+							},
 						},
 					},
 				},
@@ -120,6 +138,7 @@ func TestRemoveDevice(t *testing.T) {
 		name          string
 		deviceName    string
 		envVar        string
+		cpusetStr     string
 		simulateErr   bool
 		expectedError string
 	}{
@@ -127,12 +146,14 @@ func TestRemoveDevice(t *testing.T) {
 			name:        "successfully removes an existing device spec from disk",
 			deviceName:  "claim-cpu-remove-success",
 			envVar:      "CPU=4,5",
+			cpusetStr:   "4,5",
 			simulateErr: false,
 		},
 		{
 			name:          "fails to remove spec when directory is actually a file",
 			deviceName:    "claim-cpu-remove-error",
 			envVar:        "CPU=4,5",
+			cpusetStr:     "4,5",
 			simulateErr:   true,
 			expectedError: "failed to remove CDI spec",
 		},
@@ -142,6 +163,7 @@ func TestRemoveDevice(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			logger := testr.New(t)
 			tempCDIDir := t.TempDir()
+			tempMountDir := t.TempDir()
 
 			if tc.simulateErr {
 				tempFile := filepath.Join(tempCDIDir, "invalid-dir-file")
@@ -150,15 +172,19 @@ func TestRemoveDevice(t *testing.T) {
 				tempCDIDir = tempFile
 			}
 
-			mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir)
+			mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir, tempMountDir)
 			require.NoError(t, err)
 
 			expectedSpecName := mgr.getSpecName(tc.deviceName)
-			expectedFilePath := filepath.Join(tempCDIDir, expectedSpecName)
+			expectedSpecFilePath := filepath.Join(tempCDIDir, expectedSpecName)
+			expectedHostCPUSetPath := mgr.cpusetHostPath(tc.deviceName)
 
 			if !tc.simulateErr {
-				err = mgr.AddDevice(logger, tc.deviceName, []string{tc.envVar})
+				err = mgr.AddDevice(logger, tc.deviceName, []string{tc.envVar}, tc.cpusetStr)
 				require.NoError(t, err)
+				// Verify both files exist before removal.
+				_, err = os.Stat(expectedHostCPUSetPath)
+				require.NoError(t, err, "expected cpuset file to exist before removal")
 			}
 
 			err = mgr.RemoveDevice(logger, tc.deviceName)
@@ -171,9 +197,13 @@ func TestRemoveDevice(t *testing.T) {
 
 			require.NoError(t, err)
 
-			_, err = os.Stat(expectedFilePath)
-			require.Error(t, err, "expected an error when stating a deleted file")
-			require.True(t, os.IsNotExist(err), "expected file to not exist on disk, but got: %v", err)
+			_, err = os.Stat(expectedSpecFilePath)
+			require.Error(t, err, "expected an error when stating a deleted CDI spec file")
+			require.True(t, os.IsNotExist(err), "expected CDI spec file to not exist on disk, but got: %v", err)
+
+			_, err = os.Stat(expectedHostCPUSetPath)
+			require.Error(t, err, "expected an error when stating a deleted cpuset file")
+			require.True(t, os.IsNotExist(err), "expected cpuset file to not exist on disk, but got: %v", err)
 
 			gotAfterRemove := getSpecFromCache(mgr, expectedSpecName)
 			require.Nil(t, gotAfterRemove, "expected spec to be nil in cache after removal")
@@ -184,31 +214,37 @@ func TestRemoveDevice(t *testing.T) {
 func TestAddDeviceOverwrite(t *testing.T) {
 	logger := testr.New(t)
 	tempCDIDir := t.TempDir()
+	tempMountDir := t.TempDir()
 
-	mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir)
+	mgr, err := NewCdiManager(logger, testDriverName, tempCDIDir, tempMountDir)
 	require.NoError(t, err)
 
 	deviceName := "claim-cpu-overwrite"
 	expectedSpecName := mgr.getSpecName(deviceName)
 
-	assertFileCount := func(expected int) {
+	assertCDIFileCount := func(expected int) {
 		files, err := os.ReadDir(tempCDIDir)
 		require.NoError(t, err)
 		require.Len(t, files, expected)
 	}
 
-	err = mgr.AddDevice(logger, deviceName, []string{"CPU=0,1"})
+	err = mgr.AddDevice(logger, deviceName, []string{"CPU=0,1"}, "0,1")
 	require.NoError(t, err)
-	assertFileCount(1)
+	assertCDIFileCount(1)
 
 	// Verify the cache has the initial spec
 	spec1 := getSpecFromCache(mgr, expectedSpecName)
 	require.NotNil(t, spec1)
 	require.Equal(t, []string{"CPU=0,1"}, spec1.Devices[0].ContainerEdits.Env)
 
-	// Call AddDevice again with the same deviceName and same data
-	err = mgr.AddDevice(logger, deviceName, []string{"CPU=0,1"})
+	// Verify cpuset file content
+	content, err := os.ReadFile(mgr.cpusetHostPath(deviceName))
 	require.NoError(t, err)
-	// Verify that we do not create a new file
-	assertFileCount(1)
+	require.Equal(t, "0,1", string(content))
+
+	// Call AddDevice again with the same deviceName and same data
+	err = mgr.AddDevice(logger, deviceName, []string{"CPU=0,1"}, "0,1")
+	require.NoError(t, err)
+	// Verify that we do not create a new CDI spec file
+	assertCDIFileCount(1)
 }

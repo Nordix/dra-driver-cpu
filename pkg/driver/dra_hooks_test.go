@@ -61,6 +61,7 @@ func (m *mockKubeletPlugin) Stop() {}
 
 type mockCdiMgr struct {
 	devices     map[string][]string
+	cpusets     map[string]string
 	addError    error
 	removeError error
 }
@@ -68,14 +69,16 @@ type mockCdiMgr struct {
 func newMockCdiMgr() *mockCdiMgr {
 	return &mockCdiMgr{
 		devices: make(map[string][]string),
+		cpusets: make(map[string]string),
 	}
 }
 
-func (m *mockCdiMgr) AddDevice(_ logr.Logger, deviceName string, envVars []string) error {
+func (m *mockCdiMgr) AddDevice(_ logr.Logger, deviceName string, envVars []string, cpusetStr string) error {
 	if m.addError != nil {
 		return m.addError
 	}
 	m.devices[deviceName] = envVars
+	m.cpusets[deviceName] = cpusetStr
 	return nil
 }
 
@@ -84,6 +87,7 @@ func (m *mockCdiMgr) RemoveDevice(_ logr.Logger, deviceName string) error {
 		return m.removeError
 	}
 	delete(m.devices, deviceName)
+	delete(m.cpusets, deviceName)
 	return nil
 }
 
@@ -1598,6 +1602,7 @@ func newDriverWithAllocatedClaim(t *testing.T, logger logr.Logger, claimUID type
 		fmt.Sprintf("%s_%s=%s", cdiEnvVarPrefix, claimUID, allocatedCPUs.String()),
 		fmt.Sprintf("%s=%s", cdiEnvVarAssigned, allocatedCPUs.String()),
 	}
+	mockCdiMgr.cpusets[getCDIDeviceName(claimUID)] = allocatedCPUs.String()
 	mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_SingleSocket_4CPUS_HT}
 	topo, err := mockProvider.GetCPUTopology(logger)
 	require.NoError(t, err)
