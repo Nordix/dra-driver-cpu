@@ -17,6 +17,8 @@ package driver
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/go-logr/logr"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
@@ -29,19 +31,22 @@ const (
 	cdiClass        = "cpu"
 	cdiEnvVarPrefix = "DRA_CPUSET"
 	// This mirrors the semantics of the assigned.cpuset introduced in k/k KEP #6122.
-	cdiEnvVarAssigned = "DRA_CPUSET_ASSIGNED"
-	cdiSpecDir        = "/var/run/cdi"
+	cdiEnvVarAssigned     = "DRA_CPUSET_ASSIGNED"
+	cdiSpecDir            = "/var/run/cdi"
+	cdiMountBaseDir       = "/var/run/dra-cpu"
+	cdiContainerMountPath = "/etc/dra-cpu/assigned-cpuset"
 )
 
 // CdiManager handles the lifecycle of CDI allocations for the driver.
 type CdiManager struct {
-	cache      *cdiapi.Cache
-	cdiKind    string
-	driverName string
+	cache        *cdiapi.Cache
+	cdiKind      string
+	driverName   string
+	mountBaseDir string
 }
 
 // NewCdiManager creates a manager for the driver's CDI allocations.
-func NewCdiManager(logger logr.Logger, driverName string, cdiDir string) (*CdiManager, error) {
+func NewCdiManager(logger logr.Logger, driverName string, cdiDir string, mountBaseDir string) (*CdiManager, error) {
 	cache, err := cdiapi.NewCache(
 		cdiapi.WithSpecDirs(cdiDir),
 		// Disabled because we manage state entirely via the filesystem
@@ -53,12 +58,13 @@ func NewCdiManager(logger logr.Logger, driverName string, cdiDir string) (*CdiMa
 	}
 
 	c := &CdiManager{
-		cache:      cache,
-		cdiKind:    fmt.Sprintf("%s/%s", cdiVendor, cdiClass),
-		driverName: driverName,
+		cache:        cache,
+		cdiKind:      fmt.Sprintf("%s/%s", cdiVendor, cdiClass),
+		driverName:   driverName,
+		mountBaseDir: mountBaseDir,
 	}
 
-	logger.Info("Initialized CDI manager", "driverName", driverName, "cdiDir", cdiDir)
+	logger.Info("Initialized CDI manager", "driverName", driverName, "cdiDir", cdiDir, "mountBaseDir", mountBaseDir)
 	return c, nil
 }
 
@@ -67,10 +73,21 @@ func (c *CdiManager) getSpecName(deviceName string) string {
 	return cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, deviceName) + ".json"
 }
 
-// AddDevice writes a dedicated CDI spec file for a single device allocation.
-func (c *CdiManager) AddDevice(logger logr.Logger, deviceName string, envVars []string) error {
-	specName := c.getSpecName(deviceName)
+// cpusetHostPath returns the host path of the cpuset file for a given device.
+func (c *CdiManager) cpusetHostPath(deviceName string) string {
+	return filepath.Join(c.mountBaseDir, deviceName, "assigned-cpuset")
+}
 
+func (c *CdiManager) AddDevice(logger logr.Logger, deviceName string, envVars []string, cpusetStr string) error {
+	hostPath := c.cpusetHostPath(deviceName)
+	if err := os.MkdirAll(filepath.Dir(hostPath), 0750); err != nil {
+		return fmt.Errorf("failed to create cpuset dir %q: %w", filepath.Dir(hostPath), err)
+	}
+	if err := os.WriteFile(hostPath, []byte(cpusetStr), 0640); err != nil {
+		return fmt.Errorf("failed to write cpuset file %q: %w", hostPath, err)
+	}
+
+	specName := c.getSpecName(deviceName)
 	spec := &cdiSpec.Spec{
 		Version: cdiSpecVersion,
 		Kind:    c.cdiKind,
@@ -79,6 +96,13 @@ func (c *CdiManager) AddDevice(logger logr.Logger, deviceName string, envVars []
 				Name: deviceName,
 				ContainerEdits: cdiSpec.ContainerEdits{
 					Env: envVars,
+					Mounts: []*cdiSpec.Mount{
+						{
+							HostPath:      hostPath,
+							ContainerPath: cdiContainerMountPath,
+							Options:       []string{"ro", "bind"},
+						},
+					},
 				},
 			},
 		},
@@ -88,18 +112,23 @@ func (c *CdiManager) AddDevice(logger logr.Logger, deviceName string, envVars []
 		return fmt.Errorf("failed to write CDI spec %q: %w", specName, err)
 	}
 
-	logger.V(4).Info("Added CDI device", "deviceName", deviceName, "specName", specName, "envVars", envVars)
+	logger.V(4).Info("Added CDI device", "deviceName", deviceName, "specName", specName,
+		"envVars", envVars, "hostPath", hostPath, "containerPath", cdiContainerMountPath)
 	return nil
 }
 
-// RemoveDevice deletes the dedicated CDI spec file for a single device allocation.
+// RemoveDevice deletes the CDI spec file and the host-side cpuset file for a device allocation.
 func (c *CdiManager) RemoveDevice(logger logr.Logger, deviceName string) error {
 	specName := c.getSpecName(deviceName)
-
 	if err := c.cache.RemoveSpec(specName); err != nil {
 		return fmt.Errorf("failed to remove CDI spec %q: %w", specName, err)
 	}
 
-	logger.V(4).Info("Removed CDI device", "deviceName", deviceName, "specName", specName)
+	hostDir := filepath.Dir(c.cpusetHostPath(deviceName))
+	if err := os.RemoveAll(hostDir); err != nil {
+		return fmt.Errorf("failed to remove cpuset dir %q: %w", hostDir, err)
+	}
+
+	logger.V(4).Info("Removed CDI device", "deviceName", deviceName, "specName", specName, "hostDir", hostDir)
 	return nil
 }

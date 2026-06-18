@@ -101,6 +101,8 @@ spec:
           mountPath: /var/run/nri
         - name: cdi-dir
           mountPath: /var/run/cdi
+        - name: dra-cpu-mount
+          mountPath: /var/run/dra-cpu
       volumes:
       - name: device-plugin
         hostPath:
@@ -114,4 +116,8 @@ spec:
       - name: cdi-dir
         hostPath:
           path: /var/run/cdi
+          type: DirectoryOrCreate
+      - name: dra-cpu-mount
+        hostPath:
+          path: /var/run/dra-cpu
           type: DirectoryOrCreate

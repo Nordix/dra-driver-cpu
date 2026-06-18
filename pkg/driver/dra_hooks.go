@@ -514,7 +514,7 @@ func (cp *CPUDriver) prepareDevices(logger logr.Logger, claim *resourceapi.Resou
 	deviceName := getCDIDeviceName(claim.UID)
 	perClaimEnvVar := fmt.Sprintf("%s_%s=%s", cdiEnvVarPrefix, claim.UID, claimCPUSet.String())
 	aggregateEnvVar := fmt.Sprintf("%s=%s", cdiEnvVarAssigned, claimCPUSet.String())
-	if err := cp.cdiMgr.AddDevice(logger, deviceName, []string{perClaimEnvVar, aggregateEnvVar}); err != nil {
+	if err := cp.cdiMgr.AddDevice(logger, deviceName, []string{perClaimEnvVar, aggregateEnvVar}, claimCPUSet.String()); err != nil {
 		return kubeletplugin.PrepareResult{Err: err}
 	}
 

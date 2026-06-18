@@ -69,7 +69,7 @@ type KubeletPlugin interface {
 }
 
 type cdiManager interface {
-	AddDevice(logger logr.Logger, deviceName string, envVars []string) error
+	AddDevice(logger logr.Logger, deviceName string, envVars []string, cpusetStr string) error
 	RemoveDevice(logger logr.Logger, deviceName string) error
 }
 
@@ -176,7 +176,7 @@ func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) 
 		return nil, asyncErr, fmt.Errorf("failed to create plugin path %s: %w", driverPluginPath, err)
 	}
 
-	cdiMgr, err := NewCdiManager(logger, config.DriverName, cdiSpecDir)
+	cdiMgr, err := NewCdiManager(logger, config.DriverName, cdiSpecDir, cdiMountBaseDir)
 	if err != nil {
 		return nil, asyncErr, fmt.Errorf("failed to create CDI manager: %w", err)
 	}
