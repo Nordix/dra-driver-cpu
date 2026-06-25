@@ -119,6 +119,19 @@ var (
 		{CpuID: 6, CoreID: 2, SocketID: 1, NUMANodeID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 2},
 		{CpuID: 7, CoreID: 3, SocketID: 1, NUMANodeID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 3},
 	}
+	// 2 L3 cache domains, 2 cores each, HT on. Total 8 logical CPUs.
+	// L3 cache 0: CPUs {0,4,1,5} (socket 0, NUMA node 0)
+	// L3 cache 1: CPUs {2,6,3,7} (socket 1, NUMA node 1)
+	mockCPUInfos_DualL3Cache_4CPUsPerCache_HT = []cpuinfo.CPUInfo{
+		{CpuID: 0, CoreID: 0, SocketID: 0, NUMANodeID: 0, UncoreCacheID: 0, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 4},
+		{CpuID: 1, CoreID: 1, SocketID: 0, NUMANodeID: 0, UncoreCacheID: 0, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 5},
+		{CpuID: 2, CoreID: 2, SocketID: 1, NUMANodeID: 1, UncoreCacheID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 6},
+		{CpuID: 3, CoreID: 3, SocketID: 1, NUMANodeID: 1, UncoreCacheID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 7},
+		{CpuID: 4, CoreID: 0, SocketID: 0, NUMANodeID: 0, UncoreCacheID: 0, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 0},
+		{CpuID: 5, CoreID: 1, SocketID: 0, NUMANodeID: 0, UncoreCacheID: 0, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 1},
+		{CpuID: 6, CoreID: 2, SocketID: 1, NUMANodeID: 1, UncoreCacheID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 2},
+		{CpuID: 7, CoreID: 3, SocketID: 1, NUMANodeID: 1, UncoreCacheID: 1, CoreType: cpuinfo.CoreTypePerformance, SiblingCPUID: 3},
+	}
 	mockCPUInfos_DualSocket_EqualsResourceSliceLimit = func() []cpuinfo.CPUInfo {
 		var infos []cpuinfo.CPUInfo
 		cpusPerNumaNode := resourceapi.ResourceSliceMaxDevices / 2
@@ -426,14 +439,15 @@ func TestInitializeDeviceLookupMaps(t *testing.T) {
 	logger := testr.New(t)
 
 	testCases := []struct {
-		name                       string
-		cpuDeviceMode              string
-		cpuDeviceGroupBy           string
-		cpuInfos                   []cpuinfo.CPUInfo
-		reservedCPUs               cpuset.CPUSet
-		expectedDeviceNameToCPUID  map[string]int
-		expectedDeviceNameToSocket map[string]int
-		expectedDeviceNameToNUMA   map[string]int
+		name                        string
+		cpuDeviceMode               string
+		cpuDeviceGroupBy            string
+		cpuInfos                    []cpuinfo.CPUInfo
+		reservedCPUs                cpuset.CPUSet
+		expectedDeviceNameToCPUID   map[string]int
+		expectedDeviceNameToSocket  map[string]int
+		expectedDeviceNameToNUMA    map[string]int
+		expectedDeviceNameToL3Cache map[string]int
 	}{
 		{
 			name:          "individual mode",
@@ -462,6 +476,14 @@ func TestInitializeDeviceLookupMaps(t *testing.T) {
 			reservedCPUs:             cpuset.New(2, 3, 6, 7),
 			expectedDeviceNameToNUMA: map[string]int{"cpudevnuma000": 0},
 		},
+		{
+			name:             "grouped by l3 cache",
+			cpuDeviceMode:    CPU_DEVICE_MODE_GROUPED,
+			cpuDeviceGroupBy: GROUP_BY_L3_CACHE,
+			cpuInfos:         mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			reservedCPUs:     cpuset.New(0, 1, 4, 5),
+			expectedDeviceNameToL3Cache: map[string]int{"cpudevl3cache001": 1},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -487,9 +509,13 @@ func TestInitializeDeviceLookupMaps(t *testing.T) {
 			if tc.expectedDeviceNameToNUMA == nil {
 				tc.expectedDeviceNameToNUMA = map[string]int{}
 			}
+			if tc.expectedDeviceNameToL3Cache == nil {
+				tc.expectedDeviceNameToL3Cache = map[string]int{}
+			}
 			require.Equal(t, tc.expectedDeviceNameToCPUID, cp.deviceNameToCPUID)
 			require.Equal(t, tc.expectedDeviceNameToSocket, cp.deviceNameToSocketID)
 			require.Equal(t, tc.expectedDeviceNameToNUMA, cp.deviceNameToNUMANodeID)
+			require.Equal(t, tc.expectedDeviceNameToL3Cache, cp.deviceNameToL3CacheID)
 		})
 	}
 }
@@ -509,12 +535,16 @@ func TestPublishResourcesDoesNotInitializeGroupedLookupMaps(t *testing.T) {
 			name:             "numa grouped",
 			cpuDeviceGroupBy: GROUP_BY_NUMA_NODE,
 		},
+		{
+			name:             "l3 cache grouped",
+			cpuDeviceGroupBy: GROUP_BY_L3_CACHE,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockPlugin := &mockKubeletPlugin{}
-			mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_DualSocket_4CPUsPerSocket_HT}
+			mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_DualL3Cache_4CPUsPerCache_HT}
 			topo, err := mockProvider.GetCPUTopology(logger)
 			require.NoError(t, err)
 
@@ -523,6 +553,7 @@ func TestPublishResourcesDoesNotInitializeGroupedLookupMaps(t *testing.T) {
 				draPlugin:              mockPlugin,
 				deviceNameToSocketID:   make(map[string]int),
 				deviceNameToNUMANodeID: make(map[string]int),
+				deviceNameToL3CacheID:  make(map[string]int),
 				cpuTopology:            topo,
 				cpuDeviceMode:          CPU_DEVICE_MODE_GROUPED,
 				cpuDeviceGroupBy:       tc.cpuDeviceGroupBy,
@@ -535,6 +566,7 @@ func TestPublishResourcesDoesNotInitializeGroupedLookupMaps(t *testing.T) {
 			require.NotNil(t, mockPlugin.publishedResources)
 			require.Empty(t, cp.deviceNameToSocketID)
 			require.Empty(t, cp.deviceNameToNUMANodeID)
+			require.Empty(t, cp.deviceNameToL3CacheID)
 		})
 	}
 }
@@ -569,11 +601,17 @@ func TestPrepareResourceClaimsSucceedsBeforePublishResources(t *testing.T) {
 			cpuDeviceGroupBy: GROUP_BY_NUMA_NODE,
 			claim:            testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevnuma000": 2}),
 		},
+		{
+			name:             "l3 cache grouped",
+			cpuDeviceMode:    CPU_DEVICE_MODE_GROUPED,
+			cpuDeviceGroupBy: GROUP_BY_L3_CACHE,
+			claim:            testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache000": 2}),
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_DualSocket_4CPUsPerSocket_HT}
+			mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_DualL3Cache_4CPUsPerCache_HT}
 			topo, err := mockProvider.GetCPUTopology(logger)
 			require.NoError(t, err)
 
@@ -952,6 +990,7 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 		driver.cpuDeviceGroupBy = groupBy
 		driver.deviceNameToSocketID = make(map[string]int)
 		driver.deviceNameToNUMANodeID = make(map[string]int)
+		driver.deviceNameToL3CacheID = make(map[string]int)
 		mockProvider := &cpuinfo.MockCPUInfoProvider{CPUInfos: cpuInfos}
 		driver.cpuTopology, _ = mockProvider.GetCPUTopology(logger)
 		driver.onlineCPUs = driver.cpuTopology.CPUDetails.CPUs()
@@ -971,6 +1010,11 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 		case GROUP_BY_NUMA_NODE:
 			for i := 0; i < topo.NumNUMANodes; i++ {
 				driver.deviceNameToNUMANodeID[fmt.Sprintf("%snuma%d", cpuDevicePrefix, i)] = i
+			}
+		case GROUP_BY_L3_CACHE:
+			l3CacheIDs := topo.CPUDetails.UncoreCaches().List()
+			for _, l3ID := range l3CacheIDs {
+				driver.deviceNameToL3CacheID[fmt.Sprintf("%s%03d", cpuDeviceL3CacheGroupedPrefix, l3ID)] = l3ID
 			}
 		}
 		return driver
@@ -1213,6 +1257,61 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 			groupBy:       GROUP_BY_MACHINE,
 			claims:        []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{cpuDeviceMachineGrouped: 2}, "0-2")},
 			expectedError: true,
+		},
+		// L3 cache grouped tests
+		{
+			name:           "L3CacheGrouped_DualL3Cache_Alloc2CPU_L3Cache0",
+			cpuInfos:       mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:        GROUP_BY_L3_CACHE,
+			claims:         []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache000": 2})},
+			expectedCPUSet: cpuset.New(0, 4),
+		},
+		{
+			name:           "L3CacheGrouped_DualL3Cache_Alloc2CPU_L3Cache1",
+			cpuInfos:       mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:        GROUP_BY_L3_CACHE,
+			claims:         []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache001": 2})},
+			expectedCPUSet: cpuset.New(2, 6),
+		},
+		{
+			name:           "L3CacheGrouped_DualL3Cache_AllocAllCPU_L3Cache0",
+			cpuInfos:       mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:        GROUP_BY_L3_CACHE,
+			claims:         []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache000": 4})},
+			expectedCPUSet: cpuset.New(0, 4, 1, 5),
+		},
+		{
+			name:         "L3CacheGrouped_DualL3Cache_Alloc2CPU_WithReserved",
+			cpuInfos:     mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:      GROUP_BY_L3_CACHE,
+			reservedCPUs: cpuset.New(0, 4),
+			claims:       []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache000": 2})},
+			// prefer hyperthreads on same core over lower numbered CPUs
+			expectedCPUSet: cpuset.New(1, 5),
+		},
+		{
+			name:          "L3CacheGrouped_DualL3Cache_MoreThanAvailableError",
+			cpuInfos:      mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:       GROUP_BY_L3_CACHE,
+			claims:        []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache000": 5})},
+			expectedError: true,
+		},
+		{
+			name:          "L3CacheGrouped_DualL3Cache_DeviceNotFoundError",
+			cpuInfos:      mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:       GROUP_BY_L3_CACHE,
+			claims:        []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevl3cache099": 2})},
+			expectedError: true,
+		},
+		{
+			name:    "L3CacheGrouped_DualL3Cache_MultiDomainRequest",
+			cpuInfos: mockCPUInfos_DualL3Cache_4CPUsPerCache_HT,
+			groupBy:  GROUP_BY_L3_CACHE,
+			claims: []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{
+				"cpudevl3cache000": 2,
+				"cpudevl3cache001": 2,
+			})},
+			expectedCPUSet: cpuset.New(0, 4, 2, 6),
 		},
 	}
 

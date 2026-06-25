@@ -52,6 +52,8 @@ const (
 	GROUP_BY_NUMA_NODE = "numanode"
 	// GROUP_BY_MACHINE groups CPUs by the entire machine.
 	GROUP_BY_MACHINE = "machine"
+	// GROUP_BY_L3_CACHE groups CPUs by L3 (uncore) cache domain.
+	GROUP_BY_L3_CACHE = "l3cache"
 )
 
 const (
@@ -94,6 +96,7 @@ type CPUDriver struct {
 	deviceNameToCPUID       map[string]int
 	deviceNameToSocketID    map[string]int
 	deviceNameToNUMANodeID  map[string]int
+	deviceNameToL3CacheID   map[string]int
 	reservedCPUs            cpuset.CPUSet
 	onlineCPUs              cpuset.CPUSet
 	cpuDeviceMode           string
@@ -135,6 +138,7 @@ func Start(ctx context.Context, clientset kubernetes.Interface, config *Config) 
 		deviceNameToCPUID:       make(map[string]int),
 		deviceNameToSocketID:    make(map[string]int),
 		deviceNameToNUMANodeID:  make(map[string]int),
+		deviceNameToL3CacheID:   make(map[string]int),
 		reservedCPUs:            config.ReservedCPUs,
 		cpuDeviceMode:           config.CPUDeviceMode,
 		cpuDeviceGroupBy:        config.CPUDeviceGroupBy,

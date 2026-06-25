@@ -198,6 +198,17 @@ func (d CPUDetails) CoresInNUMANodes(ids ...int) cpuset.CPUSet {
 	return cpuset.New(coreIDs...)
 }
 
+// UncoreCaches returns all the UncoreCache IDs associated with the CPUs in this CPUDetails.
+func (d CPUDetails) UncoreCaches() cpuset.CPUSet {
+	var uncoreCacheIDs []int
+	for _, info := range d {
+		if info.UncoreCacheID != -1 {
+			uncoreCacheIDs = append(uncoreCacheIDs, info.UncoreCacheID)
+		}
+	}
+	return cpuset.New(uncoreCacheIDs...)
+}
+
 // CoresNeededInUncoreCache returns either the full list of all available unique core IDs associated with the given
 // UnCoreCache IDs in this CPUDetails or subset that matches the ask.
 func (d CPUDetails) CoresNeededInUncoreCache(numCoresNeeded int, ids ...int) cpuset.CPUSet {

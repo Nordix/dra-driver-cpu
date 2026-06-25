@@ -27,12 +27,13 @@
           "type": "boolean"
         },
         "groupBy": {
-          "description": "Grouping criteria when `cpuDeviceMode=grouped`: `numanode`, `socket` or `machine`",
+          "description": "Grouping criteria when `cpuDeviceMode=grouped`: `numanode`, `socket`, `machine` or `l3cache`",
           "type": "string",
           "enum": [
             "numanode",
             "socket",
-            "machine"
+            "machine",
+            "l3cache"
           ]
         },
         "hostnameOverride": {

@@ -48,9 +48,10 @@ const (
 	// cpuResourceQualifiedName is the qualified name for the CPU resource capacity.
 	cpuResourceQualifiedName = "dra.cpu/cpu"
 
-	cpuDeviceSocketGroupedPrefix = "cpudevsocket"
-	cpuDeviceNUMAGroupedPrefix   = "cpudevnuma"
-	cpuDeviceMachineGrouped      = "cpudevmachine"
+	cpuDeviceSocketGroupedPrefix  = "cpudevsocket"
+	cpuDeviceNUMAGroupedPrefix    = "cpudevnuma"
+	cpuDeviceMachineGrouped       = "cpudevmachine"
+	cpuDeviceL3CacheGroupedPrefix = "cpudevl3cache"
 )
 
 type groupedCPUDeviceInfo struct {
@@ -58,6 +59,7 @@ type groupedCPUDeviceInfo struct {
 	cpus       cpuset.CPUSet
 	socketID   int
 	numaNodeID int
+	l3CacheID  int
 }
 
 type cpuDeviceInfo struct {
@@ -106,6 +108,24 @@ func (cp *CPUDriver) groupedCPUDeviceInfos() []groupedCPUDeviceInfo {
 			name: cpuDeviceMachineGrouped,
 			cpus: allocatableCPUs,
 		})
+	case GROUP_BY_L3_CACHE:
+		l3CacheIDs := topo.CPUDetails.UncoreCaches().List()
+		for _, l3ID := range l3CacheIDs {
+			allocatableCPUs := topo.CPUDetails.CPUsInUncoreCaches(l3ID).Difference(cp.reservedCPUs)
+			if allocatableCPUs.Size() == 0 {
+				continue
+			}
+			// All CPUs in an L3 cache domain may span NUMA nodes on some architectures,
+			// but we use the first CPU's metadata as the representative for attributes.
+			anyCPU := allocatableCPUs.UnsortedList()[0]
+			devices = append(devices, groupedCPUDeviceInfo{
+				name:       fmt.Sprintf("%s%03d", cpuDeviceL3CacheGroupedPrefix, l3ID),
+				cpus:       allocatableCPUs,
+				socketID:   topo.CPUDetails[anyCPU].SocketID,
+				numaNodeID: topo.CPUDetails[anyCPU].NUMANodeID,
+				l3CacheID:  l3ID,
+			})
+		}
 	}
 	return devices
 }
@@ -179,6 +199,7 @@ func (cp *CPUDriver) initializeDeviceLookupMaps() {
 	cp.deviceNameToCPUID = make(map[string]int)
 	cp.deviceNameToSocketID = make(map[string]int)
 	cp.deviceNameToNUMANodeID = make(map[string]int)
+	cp.deviceNameToL3CacheID = make(map[string]int)
 
 	if cp.cpuDeviceMode == CPU_DEVICE_MODE_GROUPED {
 		for _, device := range cp.groupedCPUDeviceInfos() {
@@ -187,6 +208,8 @@ func (cp *CPUDriver) initializeDeviceLookupMaps() {
 				cp.deviceNameToSocketID[device.name] = device.socketID
 			case GROUP_BY_NUMA_NODE:
 				cp.deviceNameToNUMANodeID[device.name] = device.numaNodeID
+			case GROUP_BY_L3_CACHE:
+				cp.deviceNameToL3CacheID[device.name] = device.l3CacheID
 			}
 		}
 		return
@@ -245,6 +268,23 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
 			}
 			cp.setPCIeRootsAttribute(deviceAttrs, deviceInfo.cpus.UnsortedList()...)
+			devices = append(devices, resourceapi.Device{
+				Name:                     deviceInfo.name,
+				Attributes:               deviceAttrs,
+				Capacity:                 deviceCapacity,
+				AllowMultipleAllocations: new(true),
+			})
+		case GROUP_BY_L3_CACHE:
+			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				AttributeCacheL3ID:  {IntValue: new(int64(deviceInfo.l3CacheID))},
+				AttributeNUMANodeID: {IntValue: new(int64(deviceInfo.numaNodeID))},
+				AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
+				AttributeSMTEnabled: {BoolValue: new(cp.cpuTopology.SMTEnabled)},
+				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
+			}
+			device.SetCompatibilityAttributes(deviceAttrs, int64(deviceInfo.numaNodeID))
+			cp.setPCIeRootsAttribute(deviceAttrs, deviceInfo.cpus.UnsortedList()...)
+
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceInfo.name,
 				Attributes:               deviceAttrs,
@@ -431,6 +471,15 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 			}
 			cur = opaqueCPUSet
 			logger.V(2).Info("using opaque config CPU assignment", "device", alloc.Device, "assigned", cur.String())
+		case GROUP_BY_L3_CACHE:
+			l3CacheID, ok := cp.deviceNameToL3CacheID[alloc.Device]
+			if !ok {
+				return kubeletplugin.PrepareResult{Err: fmt.Errorf("no valid L3 cache ID found for device %s", alloc.Device)}
+			}
+			l3CacheCPUs := topo.CPUDetails.CPUsInUncoreCaches(l3CacheID)
+			availableCPUsForDevice := sharedCPUs.Difference(cpuAssignment).Intersection(l3CacheCPUs)
+			logger.V(4).Info("L3 cache CPU availability", "l3CacheID", l3CacheID, "l3CacheCPUs", l3CacheCPUs.String(), "availableCPUs", availableCPUsForDevice.String())
+			cur, err = cpumanager.TakeByTopologyNUMAPacked(logger, topo, availableCPUsForDevice, int(claimCPUCount), cpumanager.CPUSortingStrategyPacked, true)
 		}
 
 		if err != nil {
