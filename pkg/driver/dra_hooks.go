@@ -67,15 +67,14 @@ type cpuDeviceInfo struct {
 	cpu  cpuinfo.CPUInfo
 }
 
-func (cp *CPUDriver) groupedCPUDeviceInfos() []groupedCPUDeviceInfo {
+func groupedCPUDeviceInfos(groupBy string, topo *cpuinfo.CPUTopology, onlineCPUs, reservedCPUs cpuset.CPUSet) []groupedCPUDeviceInfo {
 	var devices []groupedCPUDeviceInfo
-	topo := cp.cpuTopology
 
-	switch cp.cpuDeviceGroupBy {
+	switch groupBy {
 	case GROUP_BY_SOCKET:
 		socketIDs := topo.CPUDetails.Sockets().List()
 		for _, socketID := range socketIDs {
-			allocatableCPUs := topo.CPUDetails.CPUsInSockets(socketID).Difference(cp.reservedCPUs)
+			allocatableCPUs := topo.CPUDetails.CPUsInSockets(socketID).Difference(reservedCPUs)
 			if allocatableCPUs.Size() == 0 {
 				continue
 			}
@@ -88,7 +87,7 @@ func (cp *CPUDriver) groupedCPUDeviceInfos() []groupedCPUDeviceInfo {
 	case GROUP_BY_NUMA_NODE:
 		numaNodeIDs := topo.CPUDetails.NUMANodes().List()
 		for _, numaID := range numaNodeIDs {
-			allocatableCPUs := topo.CPUDetails.CPUsInNUMANodes(numaID).Difference(cp.reservedCPUs)
+			allocatableCPUs := topo.CPUDetails.CPUsInNUMANodes(numaID).Difference(reservedCPUs)
 			if allocatableCPUs.Size() == 0 {
 				continue
 			}
@@ -103,7 +102,7 @@ func (cp *CPUDriver) groupedCPUDeviceInfos() []groupedCPUDeviceInfo {
 			})
 		}
 	case GROUP_BY_MACHINE:
-		allocatableCPUs := cp.onlineCPUs.Difference(cp.reservedCPUs)
+		allocatableCPUs := onlineCPUs.Difference(reservedCPUs)
 		devices = append(devices, groupedCPUDeviceInfo{
 			name: cpuDeviceMachineGrouped,
 			cpus: allocatableCPUs,
@@ -174,24 +173,24 @@ func cpuDeviceInfos(topo *cpuinfo.CPUTopology, reservedCPUSet cpuset.CPUSet) []c
 }
 
 // createGroupedCPUDeviceSlices creates Device objects based on the CPU topology, grouped by a specific criteria.
-func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resourceapi.Device {
+func createGroupedCPUDeviceSlices(logger logr.Logger, groupBy string, deviceInfos []groupedCPUDeviceInfo, pcieRootMapper *store.PCIeRootMapper, smtEnabled bool) []resourceapi.Device {
 	logger.V(4).Info("creating grouped CPU devices")
 	var devices []resourceapi.Device
 
-	for _, deviceInfo := range cp.groupedDeviceInfos {
+	for _, deviceInfo := range deviceInfos {
 		availableCPUs := int64(deviceInfo.cpus.Size())
 		deviceCapacity := map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 			cpuResourceQualifiedName: {Value: *resource.NewQuantity(availableCPUs, resource.DecimalSI)},
 		}
 
-		switch cp.cpuDeviceGroupBy {
+		switch groupBy {
 		case GROUP_BY_SOCKET:
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 				AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
 				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
-				AttributeSMTEnabled: {BoolValue: new(cp.cpuTopology.SMTEnabled)},
+				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
 			}
-			addPCIeRootsAttribute(cp.pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
+			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceInfo.name,
@@ -203,11 +202,11 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 				AttributeNUMANodeID: {IntValue: new(int64(deviceInfo.numaNodeID))},
 				AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
-				AttributeSMTEnabled: {BoolValue: new(cp.cpuTopology.SMTEnabled)},
+				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
 				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(deviceInfo.numaNodeID))
-			addPCIeRootsAttribute(cp.pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
+			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
 
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceInfo.name,
@@ -217,10 +216,10 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 			})
 		case GROUP_BY_MACHINE:
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				AttributeSMTEnabled: {BoolValue: new(cp.cpuTopology.SMTEnabled)},
+				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
 				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
 			}
-			addPCIeRootsAttribute(cp.pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
+			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
 			devices = append(devices, resourceapi.Device{
 				Name:                     deviceInfo.name,
 				Attributes:               deviceAttrs,
@@ -230,10 +229,7 @@ func (cp *CPUDriver) createGroupedCPUDeviceSlices(logger logr.Logger) [][]resour
 		}
 	}
 
-	if len(devices) == 0 {
-		return nil
-	}
-	return [][]resourceapi.Device{devices}
+	return devices
 }
 
 // CreateCPUDeviceSlices creates Device objects based on the CPU topology.

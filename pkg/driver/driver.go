@@ -96,7 +96,6 @@ type CPUDriver struct {
 	deviceNameToCPUID       map[string]int
 	deviceNameToSocketID    map[string]int
 	deviceNameToNUMANodeID  map[string]int
-	groupedDeviceInfos      []groupedCPUDeviceInfo
 	deviceSlices            [][]resourceapi.Device
 	reservedCPUs            cpuset.CPUSet
 	onlineCPUs              cpuset.CPUSet
@@ -201,9 +200,10 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	plugin.refreshAllocationMetrics()
 	plugin.podConfigStore = store.NewPodConfig()
 
+	var devices []resourceapi.Device
 	if plugin.cpuDeviceMode == CPU_DEVICE_MODE_GROUPED {
-		plugin.groupedDeviceInfos = plugin.groupedCPUDeviceInfos()
-		for _, dev := range plugin.groupedDeviceInfos {
+		deviceInfos := groupedCPUDeviceInfos(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs)
+		for _, dev := range deviceInfos {
 			switch plugin.cpuDeviceGroupBy {
 			case GROUP_BY_SOCKET:
 				plugin.deviceNameToSocketID[dev.name] = dev.socketID
@@ -211,7 +211,7 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 				plugin.deviceNameToNUMANodeID[dev.name] = dev.numaNodeID
 			}
 		}
-		plugin.deviceSlices = plugin.createGroupedCPUDeviceSlices(logger)
+		devices = createGroupedCPUDeviceSlices(logger, plugin.cpuDeviceGroupBy, deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
 	} else {
 		deviceInfos := cpuDeviceInfos(plugin.cpuTopology, plugin.reservedCPUs)
 		deviceNameToDeviceID := make(map[string]int)
@@ -219,13 +219,13 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 			deviceNameToDeviceID[dev.name] = dev.cpu.CpuID
 		}
 		plugin.deviceNameToCPUID = deviceNameToDeviceID
-		devices := createCPUDeviceSlices(deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
-		if len(devices) > 0 {
-			// Chunk devices into slices of at most devicesPerResourceSlice
-			plugin.deviceSlices = slices.Collect(slices.Chunk(devices, plugin.devicesPerResourceSlice))
-		}
+		devices = createCPUDeviceSlices(deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
 	}
 
+	if len(devices) > 0 {
+		// Chunk devices into slices of at most devicesPerResourceSlice
+		plugin.deviceSlices = slices.Collect(slices.Chunk(devices, plugin.devicesPerResourceSlice))
+	}
 	return plugin, nil
 }
 
