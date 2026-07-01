@@ -329,6 +329,15 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 			prepareResult = cpumetrics.ResultError
 		}
 		cp.metricsRecorder().RecordPrepare(prepareResult, time.Since(start))
+
+		// Publish Ready=True + assigned CPUs to claim status (best-effort).
+		if r := result[claim.UID]; r.Err == nil {
+			if cpus, ok := cp.cpuAllocationStore.GetResourceClaimAllocation(claim.UID); ok {
+				if err := cp.claimStatusPublisher.SetReady(ctx, claim, cpus); err != nil {
+					cLogger.Error(err, "failed to publish claim device status after prepare")
+				}
+			}
+		}
 	}
 	return result, nil
 }
@@ -542,9 +551,14 @@ func (cp *CPUDriver) UnprepareResourceClaims(ctx context.Context, claims []kubel
 		if err != nil {
 			cLogger.Error(err, "error unpreparing resources for claim")
 			cp.metricsRecorder().RecordUnprepare(cpumetrics.ResultError)
-		} else {
-			cp.metricsRecorder().RecordUnprepare(cpumetrics.ResultSuccess)
-			cp.refreshAllocationMetrics()
+			continue
+		}
+		cp.metricsRecorder().RecordUnprepare(cpumetrics.ResultSuccess)
+		cp.refreshAllocationMetrics()
+
+		// Clear Ready condition in claim status (best-effort).
+		if err := cp.claimStatusPublisher.ClearReady(ctx, claim.Namespace, claim.Name, claim.UID); err != nil {
+			cLogger.Error(err, "failed to clear claim device status after unprepare")
 		}
 	}
 	return result, nil

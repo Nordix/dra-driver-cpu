@@ -106,6 +106,7 @@ type CPUDriver struct {
 	pcieRootMapper          *store.PCIeRootMapper
 	devicesPerResourceSlice int
 	metrics                 cpumetrics.Recorder
+	claimStatusPublisher    *claimStatusPublisher
 }
 
 // Providers group the interfaces the CPUDriver depends on
@@ -172,6 +173,7 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 		pcieRootMapper:          store.NewPCIeRootMapper(),
 		devicesPerResourceSlice: config.DevicesPerResourceSlice(),
 		metrics:                 metricsRecorder,
+		claimStatusPublisher:    newClaimStatusPublisher(config.DriverName, providers.K8SClient),
 	}
 	sysfs := providers.EnsureSysFS()
 

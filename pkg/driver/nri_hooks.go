@@ -25,6 +25,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/store"
+	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/cpuset"
 )
@@ -91,6 +93,13 @@ func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, co
 	cp.podConfigStore = podConfigStore
 	cp.cpuAllocationStore = cpuAllocationStore
 	cp.claimTracker = claimTracker
+
+	// Re-publish claim status for all re-discovered allocations so that
+	// ResourceClaim.status.devices reflects the current state even if the
+	// driver pod restarted and missed the original Prepare call.
+	// We list all claims (across all namespaces) and match by UID; the count
+	// is bounded by the number of pods with CPU claims running on this node.
+	cp.republishClaimStatuses(ctx, logger)
 
 	// Reconcile container CPU masks to handle cases where the NRI plugin might have crashed
 	// or restarted and missed updating the cgroup settings.
@@ -242,4 +251,39 @@ func (cp *CPUDriver) RemoveContainer(ctx context.Context, pod *api.PodSandbox, c
 		logger.Info("RemoveContainer spurious updates needed (unexpected, please file a bug)", "updates", cp.getSharedContainerUpdates(logger, types.UID(ctr.GetId())))
 	}
 	return nil
+}
+
+// republishClaimStatuses re-publishes ResourceClaim.status.devices for all claims
+// currently in the CPU allocation store. Called during Synchronize to recover after
+// a driver pod restart.
+//
+// It lists all ResourceClaims across all namespaces (bounded by active pods on this node)
+// and matches them against the in-memory allocation store by UID.
+func (cp *CPUDriver) republishClaimStatuses(ctx context.Context, logger logr.Logger) {
+	if cp.claimStatusPublisher == nil || cp.claimStatusPublisher.kubeClient == nil {
+		return
+	}
+
+	// Build a UID → claim map from all claims visible to the driver.
+	claimList, err := cp.kubeClient.ResourceV1().ResourceClaims("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Error(err, "failed to list resource claims for status re-publish during synchronize")
+		return
+	}
+	claimsByUID := make(map[types.UID]*resourceapi.ResourceClaim, len(claimList.Items))
+	for i := range claimList.Items {
+		c := &claimList.Items[i]
+		claimsByUID[c.UID] = c
+	}
+
+	cp.cpuAllocationStore.ForEach(func(claimUID types.UID, cpus cpuset.CPUSet) {
+		claim, ok := claimsByUID[claimUID]
+		if !ok {
+			logger.V(2).Info("claim not found during status re-publish", "claimUID", claimUID)
+			return
+		}
+		if err := cp.claimStatusPublisher.SetReady(ctx, claim, cpus); err != nil {
+			logger.Error(err, "failed to re-publish claim device status during synchronize", "claimUID", claimUID)
+		}
+	})
 }

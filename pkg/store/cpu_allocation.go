@@ -122,3 +122,13 @@ func (s *CPUAllocation) Snapshot() AllocationSnapshot {
 		ActiveResourceClaims: len(s.resourceClaimAllocations),
 	}
 }
+
+// ForEach calls fn for each claim allocation currently in the store.
+// The store lock is held for the duration, so fn must not call back into the store.
+func (s *CPUAllocation) ForEach(fn func(claimUID types.UID, cpus cpuset.CPUSet)) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for uid, cpus := range s.resourceClaimAllocations {
+		fn(uid, cpus)
+	}
+}

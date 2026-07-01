@@ -26,6 +26,7 @@ rules:
       - deviceclasses
     verbs:
       - get
+      - list
   - apiGroups:
       - "resource.k8s.io"
     resources:
@@ -33,6 +34,11 @@ rules:
     verbs:
       - patch
       - update
+  # resourceclaims/driver is a synthetic subresource used to write per-driver
+  # device status into ResourceClaim.status.devices (AllocatedDeviceStatus).
+  # This enables durable, queryable observability of which CPUs are pinned to
+  # each container. Requires feature gate DRAResourceClaimDeviceStatus (beta, k8s v1.36+).
+  # The associated-node:update verb restricts writes to claims allocated on this node.
   - apiGroups:
       - "resource.k8s.io"
     resources:
