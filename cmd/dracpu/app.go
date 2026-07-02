@@ -228,21 +228,15 @@ func run(logger logr.Logger) error {
 }
 
 func newSysFS(logger logr.Logger, overlayPath string) (sysfs.FS, error) {
-	sfs := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
-	if overlayPath == "" {
-		return sfs, nil
+	base := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
+	sfs, err := sysfs.NewOverlayFromFile(base, overlayPath)
+	if err != nil {
+		return nil, err
 	}
 
-	overlayData, err := os.ReadFile(overlayPath)
-	if err != nil {
-		return nil, fmt.Errorf("read sysfs overlay: %w", err)
+	if overlayPath != "" {
+		logger.Info("loaded sysfs overlay", "path", overlayPath)
 	}
-	sfs, err = sysfs.NewOverlayFromYAML(sfs, overlayData)
-	if err != nil {
-		return nil, fmt.Errorf("create sysfs overlay: %w", err)
-	}
-
-	logger.Info("loaded sysfs overlay", "path", overlayPath)
 
 	return sfs, nil
 }

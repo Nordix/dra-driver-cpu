@@ -94,6 +94,73 @@ func TestRunWritesReportToStdout(t *testing.T) {
 	}
 }
 
+func TestRunAppliesDriverSysFSOverlay(t *testing.T) {
+	driverRoot := t.TempDir()
+	overlayPath := "/etc/dra-driver-cpu/sysfs-overlay.yaml"
+	writeTestFile(t, filepath.Join(driverRoot, strings.TrimPrefix(overlayPath, "/")), []byte(`
+/sys/devices/system/cpu/smt/control: "on\n"
+/sys/devices/system/cpu/cpu0/topology/physical_package_id: "7\n"
+`))
+	hostRoot := setupFakeHost(t, []byte("/dracpu\x00--sysfs-overlay="+overlayPath+"\x00"))
+	if err := os.Symlink(driverRoot, filepath.Join(hostRoot, "proc", "42", "root")); err != nil {
+		t.Fatalf("create driver root link: %v", err)
+	}
+
+	stdout, err := captureStdout(t, func() error {
+		return gatherinfo.Run([]string{"--stdout"}, gatherinfo.Options{
+			DriverConfig: driverconfig.Default(),
+		}, logr.Discard())
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	report := readReport(t, []byte(stdout))
+	if got := report.DriverConfig.SysFSOverlay; got != overlayPath {
+		t.Fatalf("sysfsOverlay = %q, want %q", got, overlayPath)
+	}
+	if !report.CPUDetails.Topology.SMTEnabled {
+		t.Error("smtEnabled = false, want true from overlay")
+	}
+	if got := report.CPUDetails.CPUs[0].SocketID; got != 7 {
+		t.Errorf("socketID = %d, want 7 from overlay", got)
+	}
+}
+
+func TestRunAppliesDriverSysFSOverlayFromParentRelativePath(t *testing.T) {
+	driverRoot := t.TempDir()
+	driverCWD := filepath.Join(driverRoot, "work")
+	if err := os.MkdirAll(driverCWD, 0755); err != nil {
+		t.Fatalf("create driver working directory: %v", err)
+	}
+
+	overlayPath := "../config/sysfs-overlay.yaml"
+	writeTestFile(t, filepath.Join(driverRoot, "config", "sysfs-overlay.yaml"), []byte(`
+/sys/devices/system/cpu/cpu0/topology/physical_package_id: "7\n"
+`))
+	hostRoot := setupFakeHost(t, []byte("/dracpu\x00--sysfs-overlay="+overlayPath+"\x00"))
+	if err := os.Symlink(driverCWD, filepath.Join(hostRoot, "proc", "42", "cwd")); err != nil {
+		t.Fatalf("create driver cwd link: %v", err)
+	}
+
+	stdout, err := captureStdout(t, func() error {
+		return gatherinfo.Run([]string{"--stdout"}, gatherinfo.Options{
+			DriverConfig: driverconfig.Default(),
+		}, logr.Discard())
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	report := readReport(t, []byte(stdout))
+	if got := report.DriverConfig.SysFSOverlay; got != overlayPath {
+		t.Fatalf("sysfsOverlay = %q, want %q", got, overlayPath)
+	}
+	if got := report.CPUDetails.CPUs[0].SocketID; got != 7 {
+		t.Errorf("socketID = %d, want 7 from overlay", got)
+	}
+}
+
 func TestRunFailsWhenDriverProcessIsMissing(t *testing.T) {
 	setupFakeHost(t, nil)
 
@@ -209,7 +276,7 @@ func assertCommonReport(t *testing.T, report gatherinfo.Report) {
 	}
 }
 
-func setupFakeHost(t *testing.T, driverCmdline []byte) {
+func setupFakeHost(t *testing.T, driverCmdline []byte) string {
 	t.Helper()
 
 	hostRoot := t.TempDir()
@@ -235,6 +302,8 @@ func setupFakeHost(t *testing.T, driverCmdline []byte) {
 	if err := os.MkdirAll(filepath.Join(hostRoot, "sys", "devices", "system", "cpu", "cpu0", "node0"), 0755); err != nil {
 		t.Fatalf("failed to create CPU NUMA node dir: %v", err)
 	}
+
+	return hostRoot
 }
 
 func writeTestFile(t *testing.T, path string, data []byte) {

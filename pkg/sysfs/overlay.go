@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -35,6 +36,24 @@ type overlayFS struct {
 	base  FS
 	files map[string][]byte
 	dirs  map[string]map[string]overlayFileInfo
+}
+
+// NewOverlayFromFile returns base overlaid with the sysfs values in filename.
+// An empty filename leaves base unchanged.
+func NewOverlayFromFile(base FS, filename string) (FS, error) {
+	if filename == "" {
+		return base, nil
+	}
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("read sysfs overlay: %w", err)
+	}
+	overlay, err := NewOverlayFromYAML(base, data)
+	if err != nil {
+		return nil, fmt.Errorf("create sysfs overlay: %w", err)
+	}
+	return overlay, nil
 }
 
 // NewOverlayFromYAML returns a read-through sysfs configured from a YAML object
