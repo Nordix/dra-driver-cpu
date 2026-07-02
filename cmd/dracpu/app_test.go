@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,5 +83,43 @@ func TestSysFSOverlayFeedsCPUInfoProvider(t *testing.T) {
 	}
 	if !topology.SMTEnabled {
 		t.Error("SMTEnabled = false, want true")
+	}
+}
+
+func TestSysFSOverlayUsesHostRootAsBase(t *testing.T) {
+	hostRoot := t.TempDir()
+	hostRootFile := filepath.Join(hostRoot, "sys", "devices", "system", "cpu", "host-root-only")
+	if err := os.MkdirAll(filepath.Dir(hostRootFile), 0o755); err != nil {
+		t.Fatalf("create host sysfs directory: %v", err)
+	}
+	if err := os.WriteFile(hostRootFile, []byte("from host root\n"), 0o600); err != nil {
+		t.Fatalf("write host sysfs file: %v", err)
+	}
+	t.Setenv("HOST_ROOT", hostRoot)
+
+	overlayPath := filepath.Join(t.TempDir(), "sysfs-overlay.yaml")
+	if err := os.WriteFile(overlayPath, []byte(`/sys/devices/system/cpu/online: "999\n"`), 0o600); err != nil {
+		t.Fatalf("write sysfs overlay: %v", err)
+	}
+
+	sfs, err := newSysFS(testr.New(t), overlayPath)
+	if err != nil {
+		t.Fatalf("newSysFS() error = %v", err)
+	}
+
+	contents, err := fs.ReadFile(sfs, "devices/system/cpu/online")
+	if err != nil {
+		t.Fatalf("read overlaid sysfs file: %v", err)
+	}
+	if got, want := string(contents), "999\n"; got != want {
+		t.Errorf("overlaid sysfs file = %q, want %q", got, want)
+	}
+
+	contents, err = fs.ReadFile(sfs, "devices/system/cpu/host-root-only")
+	if err != nil {
+		t.Fatalf("read host-root sysfs file: %v", err)
+	}
+	if got, want := string(contents), "from host root\n"; got != want {
+		t.Errorf("host-root sysfs file = %q, want %q", got, want)
 	}
 }
