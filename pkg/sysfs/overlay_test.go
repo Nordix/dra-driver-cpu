@@ -57,7 +57,7 @@ func TestParseOverlay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseOverlay([]byte(tt.data))
+			got, err := parseOverlay([]byte(tt.data))
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error")
@@ -65,16 +65,16 @@ func TestParseOverlay(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("ParseOverlay() error = %v", err)
+				t.Fatalf("parseOverlay() error = %v", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("ParseOverlay() = %#v, want %#v", got, tt.want)
+				t.Fatalf("parseOverlay() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestOverlaySysFS(t *testing.T) {
+func TestNewOverlayFromYAML(t *testing.T) {
 	base := fstest.MapFS{
 		"devices/system/cpu/base-only": {
 			Data: []byte("base"),
@@ -90,19 +90,19 @@ func TestOverlaySysFS(t *testing.T) {
 			Mode: fs.ModeSymlink,
 		},
 	}
-	overlayData := map[string]string{
-		"/sys/devices/system/cpu/online":        "0-1\n",
-		"/sys/devices/system/cpu/overridden":    "overlay",
-		"/sys/devices/system/cpu/virtual/value": "virtual",
-	}
+	overlayData := []byte(`
+/sys/devices/system/cpu/online: "0-1\n"
+/sys/devices/system/cpu/overridden: overlay
+/sys/devices/system/cpu/virtual/value: virtual
+`)
 
-	overlayFS, err := NewOverlay(base, overlayData)
+	overlayFS, err := NewOverlayFromYAML(base, overlayData)
 	if err != nil {
-		t.Fatalf("NewOverlay() error = %v", err)
+		t.Fatalf("NewOverlayFromYAML() error = %v", err)
 	}
 
 	// The overlay is an immutable startup snapshot.
-	overlayData["/sys/devices/system/cpu/online"] = "changed"
+	clear(overlayData)
 
 	assertFileContents(t, overlayFS, "devices/system/cpu/online", "0-1\n")
 	assertFileContents(t, overlayFS, "devices/system/cpu/overridden", "overlay")
@@ -165,50 +165,47 @@ func TestOverlaySysFS(t *testing.T) {
 	}
 }
 
-func TestNewOverlayValidation(t *testing.T) {
+func TestNewOverlayFromYAMLValidation(t *testing.T) {
 	base := fstest.MapFS{}
 	tests := []struct {
-		name    string
-		base    FS
-		overlay map[string]string
+		name string
+		base FS
+		data string
 	}{
 		{
-			name:    "nil base",
-			overlay: map[string]string{"/sys/value": "value"},
+			name: "nil base",
+			data: "/sys/value: value\n",
 		},
 		{
-			name:    "relative path",
-			base:    base,
-			overlay: map[string]string{"devices/value": "value"},
+			name: "relative path",
+			base: base,
+			data: "devices/value: value\n",
 		},
 		{
-			name:    "outside sysfs",
-			base:    base,
-			overlay: map[string]string{"/proc/value": "value"},
+			name: "outside sysfs",
+			base: base,
+			data: "/proc/value: value\n",
 		},
 		{
-			name:    "sysfs root",
-			base:    base,
-			overlay: map[string]string{"/sys": "value"},
+			name: "sysfs root",
+			base: base,
+			data: "/sys: value\n",
 		},
 		{
-			name:    "unclean path",
-			base:    base,
-			overlay: map[string]string{"/sys/devices/../value": "value"},
+			name: "unclean path",
+			base: base,
+			data: "/sys/devices/../value: value\n",
 		},
 		{
 			name: "file is also parent",
 			base: base,
-			overlay: map[string]string{
-				"/sys/devices":       "file",
-				"/sys/devices/value": "value",
-			},
+			data: "/sys/devices: file\n/sys/devices/value: value\n",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := NewOverlay(tt.base, tt.overlay); err == nil {
+			if _, err := NewOverlayFromYAML(tt.base, []byte(tt.data)); err == nil {
 				t.Fatal("expected an error")
 			}
 		})

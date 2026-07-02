@@ -37,9 +37,18 @@ type overlayFS struct {
 	dirs  map[string]map[string]overlayFileInfo
 }
 
-// ParseOverlay parses a YAML object whose keys are absolute sysfs paths and
-// whose values are the file contents to return for those paths.
-func ParseOverlay(data []byte) (map[string]string, error) {
+// NewOverlayFromYAML returns a read-through sysfs configured from a YAML object
+// whose keys are absolute sysfs paths and whose values are replacement file
+// contents. All other operations are delegated to base.
+func NewOverlayFromYAML(base FS, data []byte) (FS, error) {
+	overlay, err := parseOverlay(data)
+	if err != nil {
+		return nil, err
+	}
+	return newOverlay(base, overlay)
+}
+
+func parseOverlay(data []byte) (map[string]string, error) {
 	rawOverlay := map[string]any{}
 	if err := yaml.UnmarshalStrict(data, &rawOverlay); err != nil {
 		return nil, fmt.Errorf("parse sysfs overlay: %w", err)
@@ -56,10 +65,7 @@ func ParseOverlay(data []byte) (map[string]string, error) {
 	return overlay, nil
 }
 
-// NewOverlay returns a read-through sysfs which serves exact matches from
-// overlay and delegates all other operations to base. The overlay is copied
-// and is therefore immutable after this function returns.
-func NewOverlay(base FS, overlay map[string]string) (FS, error) {
+func newOverlay(base FS, overlay map[string]string) (FS, error) {
 	if base == nil {
 		return nil, fmt.Errorf("base sysfs is nil")
 	}

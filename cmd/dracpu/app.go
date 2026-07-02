@@ -26,7 +26,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"sync/atomic"
 	"time"
 
@@ -237,24 +236,12 @@ func newSysFS(logger logr.Logger, overlayPath string) (sysfs.FS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read sysfs overlay: %w", err)
 	}
-	overlay, err := sysfs.ParseOverlay(overlayData)
-	if err != nil {
-		return nil, err
-	}
-	sfs, err = sysfs.NewOverlay(sfs, overlay)
+	sfs, err = sysfs.NewOverlayFromYAML(sfs, overlayData)
 	if err != nil {
 		return nil, fmt.Errorf("create sysfs overlay: %w", err)
 	}
 
-	logger.Info("loaded sysfs overlay", "path", overlayPath, "entries", len(overlay))
-	paths := make([]string, 0, len(overlay))
-	for overlayPath := range overlay {
-		paths = append(paths, overlayPath)
-	}
-	sort.Strings(paths)
-	for _, overlayPath := range paths {
-		logger.V(4).Info("sysfs overlay entry", "path", overlayPath, "contents", overlay[overlayPath])
-	}
+	logger.Info("loaded sysfs overlay", "path", overlayPath)
 
 	return sfs, nil
 }

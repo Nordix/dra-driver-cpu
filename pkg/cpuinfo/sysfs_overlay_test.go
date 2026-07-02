@@ -36,12 +36,12 @@ func TestSystemCPUInfoUsesSysFSOverlay(t *testing.T) {
 	})
 
 	base := os.DirFS(filepath.Join(tmpDir, "sys")).(sysfs.FS)
-	overlayFS, err := sysfs.NewOverlay(base, map[string]string{
-		"/sys/devices/system/cpu/online":                            "0\n",
-		"/sys/devices/system/cpu/cpu0/topology/physical_package_id": "7\n",
-	})
+	overlayFS, err := sysfs.NewOverlayFromYAML(base, []byte(`
+/sys/devices/system/cpu/online: "0\n"
+/sys/devices/system/cpu/cpu0/topology/physical_package_id: "7\n"
+`))
 	if err != nil {
-		t.Fatalf("NewOverlay() error = %v", err)
+		t.Fatalf("NewOverlayFromYAML() error = %v", err)
 	}
 
 	provider := NewSystemCPUInfo(overlayFS)
