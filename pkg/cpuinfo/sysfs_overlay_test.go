@@ -45,7 +45,7 @@ func TestSystemCPUInfoUsesSysFSOverlay(t *testing.T) {
 		t.Fatalf("NewOverlaySysFS() error = %v", err)
 	}
 
-	provider := NewSystemCPUInfoFromFS(sysfs)
+	provider := NewSystemCPUInfo(sysfs)
 	infos, err := provider.GetCPUInfos(testr.New(t))
 	if err != nil {
 		t.Fatalf("GetCPUInfos() error = %v", err)

@@ -152,14 +152,8 @@ type SystemCPUInfo struct {
 	sysfs sysfs.FS
 }
 
-// NewSystemCPUInfo creates a new SystemCPUInfo backed by the host sysfs.
-func NewSystemCPUInfo() *SystemCPUInfo {
-	sfs := os.DirFS(hostSys()).(sysfs.FS)
-	return NewSystemCPUInfoFromFS(sfs)
-}
-
-// NewSystemCPUInfoFromFS creates a new SystemCPUInfo backed by sysfs.
-func NewSystemCPUInfoFromFS(sfs sysfs.FS) *SystemCPUInfo {
+// NewSystemCPUInfo creates a new SystemCPUInfo backed by sysfs.
+func NewSystemCPUInfo(sfs sysfs.FS) *SystemCPUInfo {
 	return &SystemCPUInfo{sysfs: sfs}
 }
 

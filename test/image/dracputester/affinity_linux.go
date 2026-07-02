@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 	"golang.org/x/sys/unix"
 	"k8s.io/utils/cpuset"
 )
@@ -34,7 +35,8 @@ func getAffinity(logger logr.Logger) (cpuset.CPUSet, error) {
 		return cpuset.New(), err
 	}
 	maxCPUID := 0
-	if topo, err := cpuinfo.NewSystemCPUInfo().GetCPUTopology(logger); err == nil {
+	hostSysFS := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
+	if topo, err := cpuinfo.NewSystemCPUInfo(hostSysFS).GetCPUTopology(logger); err == nil {
 		maxCPUID = affinityScanBoundFromTopology(topo)
 	}
 	return affinityFromMask(&unixCS, maxCPUID), nil

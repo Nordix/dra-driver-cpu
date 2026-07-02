@@ -24,12 +24,14 @@ import (
 
 	"github.com/go-logr/stdr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 	"github.com/kubernetes-sigs/dra-driver-cpu/test/pkg/discovery"
 )
 
 func main() {
 	logger := stdr.New(log.Default())
-	cpuInfoProvider := cpuinfo.NewSystemCPUInfo()
+	hostSysFS := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
+	cpuInfoProvider := cpuinfo.NewSystemCPUInfo(hostSysFS)
 	cpus, err := cpuInfoProvider.GetCPUInfos(logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting cpu info: %v\n", err)

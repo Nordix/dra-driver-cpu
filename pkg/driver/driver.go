@@ -117,7 +117,7 @@ type Providers struct {
 
 func (pr Providers) EnsureCPUInfo() CPUInfoProvider {
 	if pr.CPUInfo == nil {
-		return cpuinfo.NewSystemCPUInfoFromFS(pr.EnsureSysFS())
+		return cpuinfo.NewSystemCPUInfo(pr.EnsureSysFS())
 	}
 	return pr.CPUInfo
 }

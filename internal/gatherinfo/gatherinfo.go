@@ -31,6 +31,7 @@ import (
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/buildinfo"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/driverconfig"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 	"sigs.k8s.io/yaml"
 )
 
@@ -190,7 +191,8 @@ func createOutputFile(parentDir string, now time.Time, pid int) (*os.File, strin
 }
 
 func collectReport(logger logr.Logger, defaults driverconfig.Config, driverCmdlinePath string) (Report, error) {
-	sys := cpuinfo.NewSystemCPUInfo()
+	sfs := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
+	sys := cpuinfo.NewSystemCPUInfo(sfs)
 
 	topology, err := sys.GetCPUTopology(logger)
 	if err != nil {
