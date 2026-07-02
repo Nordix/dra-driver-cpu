@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package sysfs
 
 import (
 	"io"
@@ -22,11 +22,9 @@ import (
 	"reflect"
 	"testing"
 	"testing/fstest"
-
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 )
 
-func TestParseSysFSOverlay(t *testing.T) {
+func TestParseOverlay(t *testing.T) {
 	tests := []struct {
 		name    string
 		data    string
@@ -59,7 +57,7 @@ func TestParseSysFSOverlay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseSysFSOverlay([]byte(tt.data))
+			got, err := ParseOverlay([]byte(tt.data))
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error")
@@ -67,10 +65,10 @@ func TestParseSysFSOverlay(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("ParseSysFSOverlay() error = %v", err)
+				t.Fatalf("ParseOverlay() error = %v", err)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("ParseSysFSOverlay() = %#v, want %#v", got, tt.want)
+				t.Fatalf("ParseOverlay() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
@@ -98,20 +96,20 @@ func TestOverlaySysFS(t *testing.T) {
 		"/sys/devices/system/cpu/virtual/value": "virtual",
 	}
 
-	sysfs, err := NewOverlaySysFS(base, overlayData)
+	overlayFS, err := NewOverlay(base, overlayData)
 	if err != nil {
-		t.Fatalf("NewOverlaySysFS() error = %v", err)
+		t.Fatalf("NewOverlay() error = %v", err)
 	}
 
 	// The overlay is an immutable startup snapshot.
 	overlayData["/sys/devices/system/cpu/online"] = "changed"
 
-	assertFileContents(t, sysfs, "devices/system/cpu/online", "0-1\n")
-	assertFileContents(t, sysfs, "devices/system/cpu/overridden", "overlay")
-	assertFileContents(t, sysfs, "devices/system/cpu/base-only", "base")
-	assertFileContents(t, sysfs, "devices/system/cpu/virtual/value", "virtual")
+	assertFileContents(t, overlayFS, "devices/system/cpu/online", "0-1\n")
+	assertFileContents(t, overlayFS, "devices/system/cpu/overridden", "overlay")
+	assertFileContents(t, overlayFS, "devices/system/cpu/base-only", "base")
+	assertFileContents(t, overlayFS, "devices/system/cpu/virtual/value", "virtual")
 
-	file, err := sysfs.Open("devices/system/cpu/overridden")
+	file, err := overlayFS.Open("devices/system/cpu/overridden")
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -124,7 +122,7 @@ func TestOverlaySysFS(t *testing.T) {
 		t.Fatalf("Open() contents = %q, want %q", got, want)
 	}
 
-	entries, err := fs.ReadDir(sysfs, "devices/system/cpu")
+	entries, err := fs.ReadDir(overlayFS, "devices/system/cpu")
 	if err != nil {
 		t.Fatalf("ReadDir() error = %v", err)
 	}
@@ -140,7 +138,7 @@ func TestOverlaySysFS(t *testing.T) {
 		t.Fatalf("ReadDir() entries = %v, want %v", gotEntries, wantEntries)
 	}
 
-	info, err := fs.Stat(sysfs, "devices/system/cpu/virtual")
+	info, err := fs.Stat(overlayFS, "devices/system/cpu/virtual")
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
@@ -148,7 +146,7 @@ func TestOverlaySysFS(t *testing.T) {
 		t.Fatal("overlay parent Stat() did not report a directory")
 	}
 
-	target, err := sysfs.ReadLink("links/online")
+	target, err := overlayFS.ReadLink("links/online")
 	if err != nil {
 		t.Fatalf("ReadLink() error = %v", err)
 	}
@@ -156,7 +154,7 @@ func TestOverlaySysFS(t *testing.T) {
 		t.Fatalf("ReadLink() = %q, want %q", got, want)
 	}
 
-	if err := fstest.TestFS(sysfs,
+	if err := fstest.TestFS(overlayFS,
 		"devices/system/cpu/base-only",
 		"devices/system/cpu/online",
 		"devices/system/cpu/overridden",
@@ -167,11 +165,11 @@ func TestOverlaySysFS(t *testing.T) {
 	}
 }
 
-func TestNewOverlaySysFSValidation(t *testing.T) {
+func TestNewOverlayValidation(t *testing.T) {
 	base := fstest.MapFS{}
 	tests := []struct {
 		name    string
-		base    sysfs.FS
+		base    FS
 		overlay map[string]string
 	}{
 		{
@@ -210,7 +208,7 @@ func TestNewOverlaySysFSValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := NewOverlaySysFS(tt.base, tt.overlay); err == nil {
+			if _, err := NewOverlay(tt.base, tt.overlay); err == nil {
 				t.Fatal("expected an error")
 			}
 		})

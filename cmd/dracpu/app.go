@@ -35,7 +35,6 @@ import (
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/driverconfig"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/gatherinfo"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
 	cpumetrics "github.com/kubernetes-sigs/dra-driver-cpu/pkg/metrics"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
@@ -238,11 +237,11 @@ func newSysFS(logger logr.Logger, overlayPath string) (sysfs.FS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read sysfs overlay: %w", err)
 	}
-	overlay, err := device.ParseSysFSOverlay(overlayData)
+	overlay, err := sysfs.ParseOverlay(overlayData)
 	if err != nil {
 		return nil, err
 	}
-	sfs, err = device.NewOverlaySysFS(sfs, overlay)
+	sfs, err = sysfs.NewOverlay(sfs, overlay)
 	if err != nil {
 		return nil, fmt.Errorf("create sysfs overlay: %w", err)
 	}

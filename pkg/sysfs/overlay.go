@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package sysfs
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"path"
@@ -27,23 +28,87 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
+	"sigs.k8s.io/yaml"
 )
 
 type overlayFS struct {
-	base  sysfs.FS
+	base  FS
 	files map[string][]byte
 	dirs  map[string]map[string]overlayFileInfo
 }
 
-func newOverlayFS(base sysfs.FS, files map[string][]byte) sysfs.FS {
-	overlay := &overlayFS{
+// ParseOverlay parses a YAML object whose keys are absolute sysfs paths and
+// whose values are the file contents to return for those paths.
+func ParseOverlay(data []byte) (map[string]string, error) {
+	rawOverlay := map[string]any{}
+	if err := yaml.UnmarshalStrict(data, &rawOverlay); err != nil {
+		return nil, fmt.Errorf("parse sysfs overlay: %w", err)
+	}
+
+	overlay := make(map[string]string, len(rawOverlay))
+	for overlayPath, value := range rawOverlay {
+		contents, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("parse sysfs overlay: value for %q must be a string", overlayPath)
+		}
+		overlay[overlayPath] = contents
+	}
+	return overlay, nil
+}
+
+// NewOverlay returns a read-through sysfs which serves exact matches from
+// overlay and delegates all other operations to base. The overlay is copied
+// and is therefore immutable after this function returns.
+func NewOverlay(base FS, overlay map[string]string) (FS, error) {
+	if base == nil {
+		return nil, fmt.Errorf("base sysfs is nil")
+	}
+	if len(overlay) == 0 {
+		return base, nil
+	}
+
+	files := make(map[string][]byte, len(overlay))
+	for fullPath, contents := range overlay {
+		name, err := overlayName(fullPath)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := files[name]; ok {
+			return nil, fmt.Errorf("duplicate sysfs overlay path %q", fullPath)
+		}
+		files[name] = []byte(contents)
+	}
+
+	for name := range files {
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			if _, ok := files[parent]; ok {
+				return nil, fmt.Errorf("sysfs overlay path %q is both a file and a directory", path.Join(Root, parent))
+			}
+		}
+	}
+
+	overlayFS := &overlayFS{
 		base:  base,
 		files: files,
 		dirs:  map[string]map[string]overlayFileInfo{".": {}},
 	}
-	overlay.buildDirectoryTree()
-	return overlay
+	overlayFS.buildDirectoryTree()
+	return overlayFS, nil
+}
+
+func overlayName(fullPath string) (string, error) {
+	if !strings.HasPrefix(fullPath, Root+"/") {
+		return "", fmt.Errorf("sysfs overlay path %q must be beneath %s", fullPath, Root)
+	}
+	if clean := path.Clean(fullPath); clean != fullPath {
+		return "", fmt.Errorf("sysfs overlay path %q is not clean", fullPath)
+	}
+
+	name := strings.TrimPrefix(fullPath, Root+"/")
+	if !fs.ValidPath(name) {
+		return "", fmt.Errorf("invalid sysfs overlay path %q", fullPath)
+	}
+	return name, nil
 }
 
 func (o *overlayFS) buildDirectoryTree() {

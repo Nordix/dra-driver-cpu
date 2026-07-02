@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr/testr"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 )
 
@@ -37,15 +36,15 @@ func TestSystemCPUInfoUsesSysFSOverlay(t *testing.T) {
 	})
 
 	base := os.DirFS(filepath.Join(tmpDir, "sys")).(sysfs.FS)
-	sysfs, err := device.NewOverlaySysFS(base, map[string]string{
+	overlayFS, err := sysfs.NewOverlay(base, map[string]string{
 		"/sys/devices/system/cpu/online":                            "0\n",
 		"/sys/devices/system/cpu/cpu0/topology/physical_package_id": "7\n",
 	})
 	if err != nil {
-		t.Fatalf("NewOverlaySysFS() error = %v", err)
+		t.Fatalf("NewOverlay() error = %v", err)
 	}
 
-	provider := NewSystemCPUInfo(sysfs)
+	provider := NewSystemCPUInfo(overlayFS)
 	infos, err := provider.GetCPUInfos(testr.New(t))
 	if err != nil {
 		t.Fatalf("GetCPUInfos() error = %v", err)
