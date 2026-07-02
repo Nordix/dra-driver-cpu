@@ -268,7 +268,7 @@ func (s *SystemCPUInfo) GetCPUInfos(logger logr.Logger) ([]CPUInfo, error) {
 			cpuInfo.CoreType = CoreTypeStandard
 		}
 
-		if err := s.populateTopologyInfo(&cpuInfo, logger); err != nil {
+		if err := populateTopologyInfo(s.sysfs, &cpuInfo, logger); err != nil {
 			logger.Info("skipping CPU due to incomplete topology", "cpuID", cpuID, "err", err)
 			continue
 		}
@@ -281,12 +281,12 @@ func (s *SystemCPUInfo) GetCPUInfos(logger logr.Logger) ([]CPUInfo, error) {
 	return cpuInfos, nil
 }
 
-func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logger) error {
+func populateTopologyInfo(sfs sysfs.FS, cpuInfo *CPUInfo, logger logr.Logger) error {
 	cpuID := cpuInfo.CpuID
 
 	// Get Socket ID from sysfs
 	socketPath := path.Join("devices", "system", "cpu", fmt.Sprintf("cpu%d", cpuID), "topology", "physical_package_id")
-	socketStr, err := readFile(s.sysfs, socketPath)
+	socketStr, err := readFile(sfs, socketPath)
 	if err != nil {
 		return fmt.Errorf("could not read socket_id for cpu %d from sysfs: %w", cpuID, err)
 	}
@@ -299,7 +299,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 	// Get Cluster ID from sysfs. While this sysfs file is present on most
 	// architectures, on ARM this defines the physical boundary for shared resources (like L2 cache).
 	clusterPath := path.Join("devices", "system", "cpu", fmt.Sprintf("cpu%d", cpuID), "topology", "cluster_id")
-	clusterStr, err := readFile(s.sysfs, clusterPath)
+	clusterStr, err := readFile(sfs, clusterPath)
 	if err == nil {
 		clusterID, err := strconv.Atoi(strings.TrimSpace(clusterStr))
 		if err != nil {
@@ -321,7 +321,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 
 	// Get Core ID from sysfs
 	corePath := path.Join("devices", "system", "cpu", fmt.Sprintf("cpu%d", cpuID), "topology", "core_id")
-	coreStr, err := readFile(s.sysfs, corePath)
+	coreStr, err := readFile(sfs, corePath)
 	if err != nil {
 		return fmt.Errorf("could not read core_id for cpu %d from sysfs: %w", cpuID, err)
 	}
@@ -333,7 +333,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 
 	// Get NUMA Node ID from sysfs
 	nodePath := path.Join("devices", "system", "cpu", fmt.Sprintf("cpu%d", cpuID))
-	files, err := fs.ReadDir(s.sysfs, nodePath)
+	files, err := fs.ReadDir(sfs, nodePath)
 	if err != nil {
 		return fmt.Errorf("could not read NUMA node for cpu %d from sysfs: %w", cpuID, err)
 	}
@@ -351,7 +351,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 
 			// Get NUMA Affinity Mask
 			cpuListPath := path.Join("devices", "system", "node", fmt.Sprintf("node%d", nodeID), "cpulist")
-			cpuListLines, err := readLines(s.sysfs, cpuListPath)
+			cpuListLines, err := readLines(sfs, cpuListPath)
 			if err != nil || len(cpuListLines) == 0 {
 				logger.V(2).Info("could not read sysfs data for NUMA affinity mask", "nodeID", nodeID, "err", err)
 				continue
@@ -374,7 +374,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 
 	// Get L3 Cache ID
 	cachePath := path.Join("devices", "system", "cpu", fmt.Sprintf("cpu%d", cpuID), "cache")
-	cacheEntries, err := fs.ReadDir(s.sysfs, cachePath)
+	cacheEntries, err := fs.ReadDir(sfs, cachePath)
 	if err != nil {
 		return fmt.Errorf("could not read cache dir %s: %w", cachePath, err)
 	}
@@ -385,7 +385,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 		}
 
 		levelPath := path.Join(cachePath, entry.Name(), "level")
-		levelStr, err := readFile(s.sysfs, levelPath)
+		levelStr, err := readFile(sfs, levelPath)
 		if err != nil {
 			continue
 		}
@@ -398,7 +398,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 		l3CacheDir := path.Join(cachePath, entry.Name())
 
 		sharedCPUListPath := path.Join(l3CacheDir, "shared_cpu_list")
-		sharedCPUListStr, err := readFile(s.sysfs, sharedCPUListPath)
+		sharedCPUListStr, err := readFile(sfs, sharedCPUListPath)
 		if err != nil {
 			return fmt.Errorf("could not read shared_cpu_list from %s: %w", sharedCPUListPath, err)
 		}
@@ -409,7 +409,7 @@ func (s *SystemCPUInfo) populateTopologyInfo(cpuInfo *CPUInfo, logger logr.Logge
 		}
 
 		cacheIdPath := path.Join(l3CacheDir, "id")
-		idStr, err := readFile(s.sysfs, cacheIdPath)
+		idStr, err := readFile(sfs, cacheIdPath)
 		var id int
 		if err != nil {
 			// Fallback for ARM systems missing the 'id' file: use the lowest shared CPU ID as the cache ID.
