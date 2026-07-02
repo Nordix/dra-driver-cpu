@@ -20,41 +20,40 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 
 	"sigs.k8s.io/yaml"
 )
 
-// buildConfMap loads the config file at filePath into confMap.
-// It validates and strips "apiVersion" before returning.
-func buildConfMap(confMap map[string]any, filePath string) error {
-	if err := loadAndMerge(confMap, filePath); err != nil {
-		return err
+// buildConfMap loads the config file at filePath, validates and strips
+// "apiVersion", and returns the resulting map.
+func buildConfMap(filePath string) (map[string]any, error) {
+	confMap, err := loadFile(filePath)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := validateAPIVersion(confMap); err != nil {
-		return err
+		return nil, err
 	}
 	delete(confMap, "apiVersion")
 
-	return nil
+	return confMap, nil
 }
 
-// loadAndMerge reads the YAML file at path and merges it into dst.
-func loadAndMerge(dst map[string]any, path string) error {
+// loadFile reads and parses the YAML file at path into a map.
+func loadFile(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", path, err)
+		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	src := map[string]any{}
-	if err := yaml.Unmarshal(data, &src); err != nil {
-		return fmt.Errorf("parsing %s: %w", path, err)
+	confMap := map[string]any{}
+	if err := yaml.Unmarshal(data, &confMap); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
-	mergeMap(dst, src)
-	return nil
+	return confMap, nil
 }
 
 // validateAPIVersion checks confMap["apiVersion"] when present.
@@ -68,10 +67,6 @@ func validateAPIVersion(confMap map[string]any) error {
 		return fmt.Errorf("unsupported apiVersion %q, want %q", apiVer, ConfigAPIVersion)
 	}
 	return nil
-}
-
-func mergeMap(dst, src map[string]any) {
-	maps.Copy(dst, src)
 }
 
 // applyMap applies only the keys present in m to cfg; absent keys are

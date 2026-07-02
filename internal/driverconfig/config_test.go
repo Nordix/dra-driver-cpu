@@ -22,8 +22,11 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/go-logr/logr/funcr"
+	"github.com/go-logr/logr/testr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/driverconfig"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +55,7 @@ func TestLoad_NoFile(t *testing.T) {
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	result, err := driverconfig.Load(cfg, "", fs)
+	result, err := driverconfig.Load(cfg, "", fs, testr.New(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, cfg, result)
@@ -73,7 +76,7 @@ exposePCIeRoots: true
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil) // no CLI flags
 
-	result, err := driverconfig.Load(cfg, cfgFile, fs)
+	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, ":9090", result.BindAddress)
@@ -98,7 +101,7 @@ cpuDeviceMode: individual
 		"--cpu-device-mode=grouped",
 	})
 
-	result, err := driverconfig.Load(cfg, cfgFile, fs)
+	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, ":7070", result.BindAddress)
@@ -116,7 +119,7 @@ reservedCPUs: "4-7"
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	result, err := driverconfig.Load(cfg, cfgFile, fs)
+	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, "4-7", result.ReservedCPUs)
@@ -135,7 +138,7 @@ bindAddress: ":9191"
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	result, err := driverconfig.Load(cfg, cfgFile, fs)
+	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
 	assert.Equal(t, ":9191", result.BindAddress)
@@ -152,7 +155,7 @@ bindAddress: ":9090"
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	_, err := driverconfig.Load(cfg, cfgFile, fs)
+	_, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported apiVersion")
@@ -164,9 +167,35 @@ func TestLoad_MissingFileIsError(t *testing.T) {
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	_, err := driverconfig.Load(cfg, "/does/not/exist/config.yaml", fs)
+	_, err := driverconfig.Load(cfg, "/does/not/exist/config.yaml", fs, testr.New(t))
 
 	require.Error(t, err)
+}
+
+// TestLoad_UnmappedFlagLogsError: a flag missing from flagToJSONKey logs an error.
+func TestLoad_UnmappedFlagLogsError(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := writeFile(t, dir, "config.yaml", `
+apiVersion: v1alpha1
+bindAddress: ":9090"
+`)
+
+	cfg := driverconfig.Default()
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg.AddFlags(fs)
+	// Simulate a flag that AddFlags registers but flagToJSONKey forgot to map.
+	fs.String("unmapped-flag", "", "a flag missing from flagToJSONKey")
+	require.NoError(t, fs.Parse([]string{"--unmapped-flag=value"}))
+
+	var logs strings.Builder
+	logger := funcr.New(func(prefix, args string) {
+		logs.WriteString(prefix + " " + args + "\n")
+	}, funcr.Options{})
+
+	_, err := driverconfig.Load(cfg, cfgFile, fs, logger)
+
+	require.NoError(t, err)
+	assert.Contains(t, logs.String(), "unmapped-flag")
 }
 
 // TestDefault pins the built-in default values.
@@ -194,7 +223,7 @@ cpuDeviceMode: garbage
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	_, err := driverconfig.Load(cfg, cfgFile, fs)
+	_, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid cpuDeviceMode")
@@ -212,7 +241,7 @@ groupBy: garbage
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, nil)
 
-	_, err := driverconfig.Load(cfg, cfgFile, fs)
+	_, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid groupBy")

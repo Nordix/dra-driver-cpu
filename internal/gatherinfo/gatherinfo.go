@@ -296,8 +296,12 @@ func detectDriverConfig(defaults driverconfig.Config, driverCmdlinePath string) 
 	if configFile == "" {
 		return cfg
 	}
+	// Resolve configFile in the driver's mount namespace: when gatherinfo runs as a
+	// standalone tool (not sharing the driver's filesystem), the raw path from the
+	// driver's cmdline is only reachable via /proc/<pid>/root, same as overlayPath above.
+	configFile = driverFilesystemPath(driverCmdlinePath, configFile)
 	// If the file can't be read (e.g. run outside the driver container), fall back to CLI-parsed config.
-	loaded, err := driverconfig.Load(cfg, configFile, fs)
+	loaded, err := driverconfig.Load(cfg, configFile, fs, logr.Discard())
 	if err != nil {
 		return cfg
 	}

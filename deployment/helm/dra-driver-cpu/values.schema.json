@@ -24,7 +24,7 @@
           ]
         },
         "exposePCIeRoots": {
-          "description": "Discover and expose PCIe roots as device attributes. Requires the `DRAListTypeAttributes=true` feature gate in the cluster",
+          "description": "Discover and expose PCIe roots as device attributes. Requires the `DRAListTypeAttributes=true` feature gate in the cluster. Not configurable via `driverConfig`; use this flag instead",
           "type": "boolean"
         },
         "groupBy": {
@@ -215,7 +215,7 @@
     "driverconfig.schema.json": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$id": "driverconfig.schema.json",
-      "$comment": "Schema for driverConfig values. Mirrors internal/driverconfig/config.go Config struct, except bindAddress which is intentionally excluded — use the healthzPort Helm value instead. Update this file when fields are added or removed from Config.",
+      "$comment": "Schema for driverConfig values. Mirrors internal/driverconfig/config.go Config struct, except bindAddress, exposePCIeRoots, and showMetrics, whose config-file values are ignored — use healthzPort, args.exposePCIeRoots, and --show-metrics instead. Update this file when fields are added or removed from Config.",
       "type": "object",
       "properties": {
         "apiVersion": {
@@ -230,9 +230,6 @@
             "grouped",
             "individual"
           ]
-        },
-        "exposePCIeRoots": {
-          "type": "boolean"
         },
         "groupBy": {
           "type": "string",
@@ -249,6 +246,9 @@
           "type": "string"
         },
         "reservedCPUs": {
+          "type": "string"
+        },
+        "sysfsOverlay": {
           "type": "string"
         }
       },

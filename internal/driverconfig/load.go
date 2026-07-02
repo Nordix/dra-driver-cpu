@@ -19,6 +19,8 @@ package driverconfig
 import (
 	"flag"
 	"fmt"
+
+	"github.com/go-logr/logr"
 )
 
 // flagToJSONKey maps CLI flag names to their Config JSON keys.
@@ -31,25 +33,32 @@ var flagToJSONKey = map[string]string{
 	"cpu-device-mode":   "cpuDeviceMode",
 	"group-by":          "groupBy",
 	"expose-pcie-roots": "exposePCIeRoots",
+	"show-metrics":      "showMetrics",
+	"sysfs-overlay":     "sysfsOverlay",
 }
 
 // Load merges the config file at filePath into base, giving CLI flags that were
 // explicitly set (reported by fs.Visit) priority over file values.
 // If filePath is empty, base is returned unchanged. fs must already be parsed.
-func Load(base Config, filePath string, fs *flag.FlagSet) (Config, error) {
+func Load(base Config, filePath string, fs *flag.FlagSet, logger logr.Logger) (Config, error) {
+	logger.V(6).Info("config: after flags", base.LogValues()...)
+
 	if filePath == "" {
 		return base, nil
 	}
 
 	explicitJSONKeys := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) {
-		if jsonKey, ok := flagToJSONKey[f.Name]; ok {
-			explicitJSONKeys[jsonKey] = true
+		jsonKey, ok := flagToJSONKey[f.Name]
+		if !ok {
+			logger.Error(nil, "config: flag not found in flagToJSONKey map; its explicit CLI value may be silently overridden by the config file", "flag", f.Name)
+			return
 		}
+		explicitJSONKeys[jsonKey] = true
 	})
 
-	confMap := map[string]any{}
-	if err := buildConfMap(confMap, filePath); err != nil {
+	confMap, err := buildConfMap(filePath)
+	if err != nil {
 		return Config{}, fmt.Errorf("config file %q: %w", filePath, err)
 	}
 
@@ -62,6 +71,8 @@ func Load(base Config, filePath string, fs *flag.FlagSet) (Config, error) {
 	if err := applyMap(&result, confMap); err != nil {
 		return Config{}, fmt.Errorf("applying config file %q: %w", filePath, err)
 	}
+
+	logger.V(6).Info("config: after file", result.LogValues()...)
 
 	if err := result.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config file %q: %w", filePath, err)

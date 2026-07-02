@@ -31,3 +31,18 @@ type Config struct {
 	ShowMetrics      bool   `json:"showMetrics,omitempty"`
 	SysFSOverlay     string `json:"sysfsOverlay,omitempty"`
 }
+
+// LogValues returns key-value pairs for structured logging of the config.
+func (c Config) LogValues() []any {
+	return []any{
+		"kubeconfig", c.Kubeconfig,
+		"bindAddress", c.BindAddress,
+		"cpuDeviceMode", c.CPUDeviceMode,
+		"groupBy", c.GroupBy,
+		"reservedCPUs", c.ReservedCPUs,
+		"hostnameOverride", c.HostnameOverride,
+		"exposePCIeRoots", c.ExposePCIeRoots,
+		"showMetrics", c.ShowMetrics,
+		"sysfsOverlay", c.SysFSOverlay,
+	}
+}

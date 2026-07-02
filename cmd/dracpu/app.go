@@ -62,8 +62,9 @@ func init() {
 	// --config is kept outside Config to avoid a self-referential loop,
 	// following the convention used by kubeadm and similar tools.
 	flag.StringVar(&configFile, "config", "",
-		"Path to a YAML driver configuration file. Values in the file "+
-			"are applied for any flag not explicitly provided on the command line. "+
+		"Path to a YAML driver configuration file. Configuration values are applied in order: "+
+			"built-in defaults, then file values, then explicit CLI flags. "+
+			"Only values explicitly set on the command line override earlier layers. "+
 			"If empty, only CLI flags and built-in defaults are used.")
 	driverFlags.AddFlags(flag.CommandLine)
 }
@@ -93,9 +94,9 @@ func main() {
 
 	logger := ctxlog.Setup()
 
-	cfg, err := driverconfig.Load(driverFlags, configFile, flag.CommandLine)
+	cfg, err := driverconfig.Load(driverFlags, configFile, flag.CommandLine, logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dracpu: failed to load configuration: %v\n", err)
+		logger.Error(err, "failed to load configuration")
 		os.Exit(1)
 	}
 
@@ -114,16 +115,14 @@ func runDriver(logger logr.Logger, cfg driverconfig.Config) error {
 
 func run(logger logr.Logger, cfg driverconfig.Config) error {
 	printVersion(logger)
-	logger.Info("CONFIG", "bindAddress", cfg.BindAddress, "cpuDeviceMode", cfg.CPUDeviceMode,
-		"groupBy", cfg.GroupBy, "reservedCPUs", cfg.ReservedCPUs,
-		"hostnameOverride", cfg.HostnameOverride, "exposePCIeRoots", cfg.ExposePCIeRoots)
+	logger.Info("CONFIG", cfg.LogValues()...)
 
 	reservedCPUSet, err := cpuset.Parse(cfg.ReservedCPUs)
 	if err != nil {
 		return fmt.Errorf("failed to parse reserved CPUs: %w", err)
 	}
 
-	sfs, err := newSysFS(logger, driverFlags.SysFSOverlay)
+	sfs, err := newSysFS(logger, cfg.SysFSOverlay)
 	if err != nil {
 		return err
 	}
