@@ -20,7 +20,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 )
 
 type Config struct {
@@ -38,8 +38,8 @@ type Config struct {
 func Default() Config {
 	return Config{
 		BindAddress:   ":8080",
-		CPUDeviceMode: driver.CPU_DEVICE_MODE_GROUPED,
-		GroupBy:       driver.GROUP_BY_NUMA_NODE,
+		CPUDeviceMode: device.CPU_DEVICE_MODE_GROUPED,
+		GroupBy:       device.GROUP_BY_NUMA_NODE,
 	}
 }
 
@@ -87,8 +87,8 @@ func (v *cpuDeviceModeValue) String() string {
 }
 
 func (v *cpuDeviceModeValue) Set(s string) error {
-	if s != driver.CPU_DEVICE_MODE_GROUPED && s != driver.CPU_DEVICE_MODE_INDIVIDUAL {
-		return fmt.Errorf("invalid value: %q, must be %s or %s", s, driver.CPU_DEVICE_MODE_GROUPED, driver.CPU_DEVICE_MODE_INDIVIDUAL)
+	if s != device.CPU_DEVICE_MODE_GROUPED && s != device.CPU_DEVICE_MODE_INDIVIDUAL {
+		return fmt.Errorf("invalid value: %q, must be %s or %s", s, device.CPU_DEVICE_MODE_GROUPED, device.CPU_DEVICE_MODE_INDIVIDUAL)
 	}
 	*v.value = s
 	return nil
@@ -111,8 +111,8 @@ func (v *groupByValue) String() string {
 }
 
 func (v *groupByValue) Set(s string) error {
-	if s != driver.GROUP_BY_SOCKET && s != driver.GROUP_BY_NUMA_NODE && s != driver.GROUP_BY_MACHINE {
-		return fmt.Errorf("invalid value: %q, must be %s, %s or %s", s, driver.GROUP_BY_SOCKET, driver.GROUP_BY_NUMA_NODE, driver.GROUP_BY_MACHINE)
+	if s != device.GROUP_BY_SOCKET && s != device.GROUP_BY_NUMA_NODE && s != device.GROUP_BY_MACHINE {
+		return fmt.Errorf("invalid value: %q, must be %s, %s or %s", s, device.GROUP_BY_SOCKET, device.GROUP_BY_NUMA_NODE, device.GROUP_BY_MACHINE)
 	}
 	*v.value = s
 	return nil

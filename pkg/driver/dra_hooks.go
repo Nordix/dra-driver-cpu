@@ -71,7 +71,7 @@ func groupedCPUDeviceInfos(groupBy string, topo *cpuinfo.CPUTopology, onlineCPUs
 	var devices []groupedCPUDeviceInfo
 
 	switch groupBy {
-	case GROUP_BY_SOCKET:
+	case device.GROUP_BY_SOCKET:
 		socketIDs := topo.CPUDetails.Sockets().List()
 		for _, socketID := range socketIDs {
 			allocatableCPUs := topo.CPUDetails.CPUsInSockets(socketID).Difference(reservedCPUs)
@@ -84,7 +84,7 @@ func groupedCPUDeviceInfos(groupBy string, topo *cpuinfo.CPUTopology, onlineCPUs
 				socketID: socketID,
 			})
 		}
-	case GROUP_BY_NUMA_NODE:
+	case device.GROUP_BY_NUMA_NODE:
 		numaNodeIDs := topo.CPUDetails.NUMANodes().List()
 		for _, numaID := range numaNodeIDs {
 			allocatableCPUs := topo.CPUDetails.CPUsInNUMANodes(numaID).Difference(reservedCPUs)
@@ -101,7 +101,7 @@ func groupedCPUDeviceInfos(groupBy string, topo *cpuinfo.CPUTopology, onlineCPUs
 				numaNodeID: numaID,
 			})
 		}
-	case GROUP_BY_MACHINE:
+	case device.GROUP_BY_MACHINE:
 		allocatableCPUs := onlineCPUs.Difference(reservedCPUs)
 		devices = append(devices, groupedCPUDeviceInfo{
 			name: cpuDeviceMachineGrouped,
@@ -184,11 +184,11 @@ func createGroupedCPUDeviceSlices(logger logr.Logger, groupBy string, deviceInfo
 		}
 
 		switch groupBy {
-		case GROUP_BY_SOCKET:
+		case device.GROUP_BY_SOCKET:
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
-				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
-				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
+				device.AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
+				device.AttributeNumCPUs:    {IntValue: new(availableCPUs)},
+				device.AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
 			}
 			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
 
@@ -198,12 +198,12 @@ func createGroupedCPUDeviceSlices(logger logr.Logger, groupBy string, deviceInfo
 				Capacity:                 deviceCapacity,
 				AllowMultipleAllocations: new(true),
 			})
-		case GROUP_BY_NUMA_NODE:
+		case device.GROUP_BY_NUMA_NODE:
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				AttributeNUMANodeID: {IntValue: new(int64(deviceInfo.numaNodeID))},
-				AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
-				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
-				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
+				device.AttributeNUMANodeID: {IntValue: new(int64(deviceInfo.numaNodeID))},
+				device.AttributeSocketID:   {IntValue: new(int64(deviceInfo.socketID))},
+				device.AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
+				device.AttributeNumCPUs:    {IntValue: new(availableCPUs)},
 			}
 			device.SetCompatibilityAttributes(deviceAttrs, int64(deviceInfo.numaNodeID))
 			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
@@ -214,10 +214,10 @@ func createGroupedCPUDeviceSlices(logger logr.Logger, groupBy string, deviceInfo
 				Capacity:                 deviceCapacity,
 				AllowMultipleAllocations: new(true),
 			})
-		case GROUP_BY_MACHINE:
+		case device.GROUP_BY_MACHINE:
 			deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
-				AttributeNumCPUs:    {IntValue: new(availableCPUs)},
+				device.AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
+				device.AttributeNumCPUs:    {IntValue: new(availableCPUs)},
 			}
 			addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, deviceInfo.cpus.UnsortedList()...)
 			devices = append(devices, resourceapi.Device{
@@ -241,13 +241,13 @@ func createCPUDeviceSlices(deviceInfos []cpuDeviceInfo, pcieRootMapper *store.PC
 	for _, deviceInfo := range deviceInfos {
 		cpu := deviceInfo.cpu
 		deviceAttrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-			AttributeNUMANodeID: {IntValue: new(int64(cpu.NUMANodeID))},
-			AttributeSocketID:   {IntValue: new(int64(cpu.SocketID))},
-			AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
-			AttributeCacheL3ID:  {IntValue: new(int64(cpu.UncoreCacheID))},
-			AttributeCoreType:   {StringValue: new(cpu.CoreType.String())},
-			AttributeCoreID:     {IntValue: new(int64(cpu.CoreID))},
-			AttributeCPUID:      {IntValue: new(int64(cpu.CpuID))},
+			device.AttributeNUMANodeID: {IntValue: new(int64(cpu.NUMANodeID))},
+			device.AttributeSocketID:   {IntValue: new(int64(cpu.SocketID))},
+			device.AttributeSMTEnabled: {BoolValue: new(smtEnabled)},
+			device.AttributeCacheL3ID:  {IntValue: new(int64(cpu.UncoreCacheID))},
+			device.AttributeCoreType:   {StringValue: new(cpu.CoreType.String())},
+			device.AttributeCoreID:     {IntValue: new(int64(cpu.CoreID))},
+			device.AttributeCPUID:      {IntValue: new(int64(cpu.CpuID))},
 		}
 		device.SetCompatibilityAttributes(deviceAttrs, int64(cpu.NUMANodeID))
 		addPCIeRootsAttribute(pcieRootMapper, deviceAttrs, cpu.CpuID)
@@ -308,7 +308,7 @@ func (cp *CPUDriver) PrepareResourceClaims(ctx context.Context, claims []*resour
 	for _, claim := range claims {
 		start := time.Now()
 		cLogger := logger.WithValues("claim", ctxlog.KObj(claim), "claimUID", claim.UID)
-		if cp.cpuDeviceMode == CPU_DEVICE_MODE_GROUPED {
+		if cp.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
 			result[claim.UID] = cp.prepareGroupedResourceClaim(cLogger, claim)
 		} else {
 			result[claim.UID] = cp.prepareResourceClaim(cLogger, claim)
@@ -364,7 +364,7 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 		var err error
 
 		switch cp.cpuDeviceGroupBy {
-		case GROUP_BY_SOCKET:
+		case device.GROUP_BY_SOCKET:
 			socketID, ok := cp.deviceNameToSocketID[alloc.Device]
 			if !ok {
 				return kubeletplugin.PrepareResult{Err: fmt.Errorf("no valid socket ID found for device %s", alloc.Device)}
@@ -373,7 +373,7 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 			availableCPUsForDevice := sharedCPUs.Difference(cpuAssignment).Intersection(socketCPUs)
 			logger.V(4).Info("socket CPU availability", "socketID", socketID, "socketCPUs", socketCPUs.String(), "availableCPUs", availableCPUsForDevice.String())
 			cur, err = cpumanager.TakeByTopologyNUMAPacked(logger, topo, availableCPUsForDevice, int(claimCPUCount), cpumanager.CPUSortingStrategyPacked, true)
-		case GROUP_BY_NUMA_NODE:
+		case device.GROUP_BY_NUMA_NODE:
 			numaNodeID, ok := cp.deviceNameToNUMANodeID[alloc.Device]
 			if !ok {
 				return kubeletplugin.PrepareResult{Err: fmt.Errorf("no valid NUMA node ID found for device %s", alloc.Device)}
@@ -382,7 +382,7 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 			availableCPUsForDevice := sharedCPUs.Difference(cpuAssignment).Intersection(numaCPUs)
 			logger.V(4).Info("NUMA node CPU availability", "numaNodeID", numaNodeID, "numaCPUs", numaCPUs.String(), "availableCPUs", availableCPUsForDevice.String())
 			cur, err = cpumanager.TakeByTopologyNUMAPacked(logger, topo, availableCPUsForDevice, int(claimCPUCount), cpumanager.CPUSortingStrategyPacked, true)
-		case GROUP_BY_MACHINE:
+		case device.GROUP_BY_MACHINE:
 			opaqueCPUSet, ok, err := cp.getOpaqueCPUSet(logger, claim.Status.Allocation, alloc)
 			if err != nil {
 				return kubeletplugin.PrepareResult{Err: err}

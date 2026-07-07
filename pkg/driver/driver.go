@@ -29,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	cpumetrics "github.com/kubernetes-sigs/dra-driver-cpu/pkg/metrics"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/store"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
@@ -38,22 +39,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/cpuset"
-)
-
-const (
-	// CPU_DEVICE_MODE_GROUPED exposes a single device for a group of CPUs.
-	CPU_DEVICE_MODE_GROUPED = "grouped"
-	// CPU_DEVICE_MODE_INDIVIDUAL exposes each CPU as a separate device.
-	CPU_DEVICE_MODE_INDIVIDUAL = "individual"
-)
-
-const (
-	// GROUP_BY_SOCKET groups CPUs by socket.
-	GROUP_BY_SOCKET = "socket"
-	// GROUP_BY_NUMA_NODE groups CPUs by NUMA node.
-	GROUP_BY_NUMA_NODE = "numanode"
-	// GROUP_BY_MACHINE groups CPUs by the entire machine.
-	GROUP_BY_MACHINE = "machine"
 )
 
 const (
@@ -201,21 +186,21 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	plugin.podConfigStore = store.NewPodConfig()
 
 	var devices []resourceapi.Device
-	if plugin.cpuDeviceMode == CPU_DEVICE_MODE_GROUPED {
+	if plugin.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
 		deviceInfos := groupedCPUDeviceInfos(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs)
 		deviceNameToDeviceID := make(map[string]int)
 		for _, dev := range deviceInfos {
 			switch plugin.cpuDeviceGroupBy {
-			case GROUP_BY_SOCKET:
+			case device.GROUP_BY_SOCKET:
 				deviceNameToDeviceID[dev.name] = dev.socketID
-			case GROUP_BY_NUMA_NODE:
+			case device.GROUP_BY_NUMA_NODE:
 				deviceNameToDeviceID[dev.name] = dev.numaNodeID
 			}
 		}
 		switch plugin.cpuDeviceGroupBy {
-		case GROUP_BY_SOCKET:
+		case device.GROUP_BY_SOCKET:
 			plugin.deviceNameToSocketID = deviceNameToDeviceID
-		case GROUP_BY_NUMA_NODE:
+		case device.GROUP_BY_NUMA_NODE:
 			plugin.deviceNameToNUMANodeID = deviceNameToDeviceID
 		}
 		devices = createGroupedCPUDeviceSlices(logger, plugin.cpuDeviceGroupBy, deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
