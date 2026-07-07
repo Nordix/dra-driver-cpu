@@ -1033,14 +1033,14 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 						Pool:             testNodeName,
 						Device:           "cpudevsocket000",
 						Request:          "req-0",
-						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{cpuResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
+						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{devattr.CPUResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
 					},
 					{
 						Driver:           testDriverName,
 						Pool:             testNodeName,
 						Device:           "cpudevsocket000",
 						Request:          "req-1",
-						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{cpuResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
+						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{devattr.CPUResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
 					},
 				}),
 			},
@@ -1058,14 +1058,14 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 						Pool:             testNodeName,
 						Device:           "cpudevnuma000",
 						Request:          "req-0",
-						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{cpuResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
+						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{devattr.CPUResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
 					},
 					{
 						Driver:           testDriverName,
 						Pool:             testNodeName,
 						Device:           "cpudevnuma000",
 						Request:          "req-1",
-						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{cpuResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
+						ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{devattr.CPUResourceQualifiedName: *resource.NewQuantity(1, resource.DecimalSI)},
 					},
 				}),
 			},
@@ -1141,14 +1141,14 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 			name:          "MachineGrouped_MissingOpaqueError",
 			cpuInfos:      mockCPUInfos_SingleSocket_4CPUS_HT,
 			groupBy:       devattr.GROUP_BY_MACHINE,
-			claims:        []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})},
+			claims:        []*resourceapi.ResourceClaim{testClaim(claimUID, testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})},
 			expectedError: true,
 		},
 		{
 			name:           "MachineGrouped_DualSocketHT_OpaqueOverrideSuccess",
 			cpuInfos:       mockCPUInfos_DualSocket_4CPUsPerSocket_HT,
 			groupBy:        devattr.GROUP_BY_MACHINE,
-			claims:         []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "2-3")},
+			claims:         []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "2-3")},
 			expectedCPUSet: cpuset.New(2, 3),
 		},
 		{
@@ -1156,14 +1156,14 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 			cpuInfos:      mockCPUInfos_DualSocket_4CPUsPerSocket_HT,
 			groupBy:       devattr.GROUP_BY_MACHINE,
 			reservedCPUs:  cpuset.New(0, 4),
-			claims:        []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0-1")},
+			claims:        []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0-1")},
 			expectedError: true,
 		},
 		{
 			name:          "MachineGrouped_DualSocketHT_OpaqueOverrideSizeMismatchError",
 			cpuInfos:      mockCPUInfos_DualSocket_4CPUsPerSocket_HT,
 			groupBy:       devattr.GROUP_BY_MACHINE,
-			claims:        []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0-2")},
+			claims:        []*resourceapi.ResourceClaim{testClaimWithOpaqueConfig(claimUID, testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0-2")},
 			expectedError: true,
 		},
 	}
@@ -1582,7 +1582,7 @@ func testClaim(claimUID types.UID, driverName, poolName string, consumedCapacity
 			Pool:             poolName,
 			Device:           device,
 			Request:          string(claimUID),
-			ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{cpuResourceQualifiedName: *resource.NewQuantity(quantity, resource.DecimalSI)},
+			ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{devattr.CPUResourceQualifiedName: *resource.NewQuantity(quantity, resource.DecimalSI)},
 		})
 	}
 	return &resourceapi.ResourceClaim{
@@ -1632,8 +1632,8 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 		{
 			name: "Multiple CPU DRA claims - no conflicts",
 			claims: []*resourceapi.ResourceClaim{
-				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0,4"),
-				testClaimWithOpaqueConfig("claim-2", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "1,5"),
+				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0,4"),
+				testClaimWithOpaqueConfig("claim-2", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "1,5"),
 			},
 			expectedAllocations: map[string]cpuset.CPUSet{
 				"claim-1": cpuset.New(0, 4),
@@ -1643,8 +1643,8 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 		{
 			name: "Multiple CPU DRA claims with overlapping cores conflict",
 			claims: []*resourceapi.ResourceClaim{
-				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0,4"),
-				testClaimWithOpaqueConfig("claim-2", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "4,5"),
+				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0,4"),
+				testClaimWithOpaqueConfig("claim-2", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "4,5"),
 			},
 			expectedErrors: map[string]string{
 				"claim-2": "conflict with already allocated claims",
@@ -1657,7 +1657,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU allocation with other device claim configurations inside the same slice",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source: resourceapi.AllocationConfigSourceClaim,
@@ -1694,7 +1694,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU allocation with incorrect fields in raw data",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClaim,
@@ -1720,7 +1720,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "Incorrect source",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClass,
@@ -1746,7 +1746,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU config block with non-matching request name is ignored",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClaim,
@@ -1772,7 +1772,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU config block with empty requests list is rejected",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClaim,
@@ -1798,7 +1798,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU config block targeting multiple requests is rejected",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClaim,
@@ -1823,7 +1823,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 		{
 			name: "CPU allocation with offline cores",
 			claims: []*resourceapi.ResourceClaim{
-				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "99,100"),
+				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "99,100"),
 			},
 			expectedErrors: map[string]string{
 				"claim-1": "contain offline cores: 99-100",
@@ -1832,7 +1832,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 		{
 			name: "CPU allocation with reserved cores",
 			claims: []*resourceapi.ResourceClaim{
-				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0,4"),
+				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0,4"),
 			},
 			reservedCPUs: cpuset.New(0, 1),
 			expectedErrors: map[string]string{
@@ -1842,7 +1842,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 		{
 			name: "CPU allocation with already allocated claims conflict",
 			claims: []*resourceapi.ResourceClaim{
-				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2}, "0,4"),
+				testClaimWithOpaqueConfig("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2}, "0,4"),
 			},
 			initialAllocations: map[types.UID]cpuset.CPUSet{
 				"other-claim": cpuset.New(4, 5),
@@ -1855,7 +1855,7 @@ func TestOpaqueConfigAllocation(t *testing.T) {
 			name: "CPU allocation with overlapping cores inside the same claim",
 			claims: []*resourceapi.ResourceClaim{
 				func() *resourceapi.ResourceClaim {
-					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{"cpudevmachine": 2, "cpudevmachine" + "-1": 2})
+					claim := testClaim("claim-1", testDriverName, testNodeName, map[string]int64{devattr.CPUDeviceMachineGrouped: 2, devattr.CPUDeviceMachineGrouped + "-1": 2})
 					claim.Status.Allocation.Devices.Config = []resourceapi.DeviceAllocationConfiguration{
 						{
 							Source:   resourceapi.AllocationConfigSourceClaim,
@@ -1939,11 +1939,11 @@ func createCPUDriverForTest(t *testing.T, groupBy string, cpuInfos []cpuinfo.CPU
 	switch driver.cpuDeviceGroupBy {
 	case devattr.GROUP_BY_SOCKET:
 		for i := 0; i < topo.NumSockets; i++ {
-			driver.deviceNameToSocketID[fmt.Sprintf("%s%d", "cpudevsocket", i)] = i
+			driver.deviceNameToSocketID[fmt.Sprintf("%s%d", devattr.CPUDeviceSocketGroupedPrefix, i)] = i
 		}
 	case devattr.GROUP_BY_NUMA_NODE:
 		for i := 0; i < topo.NumNUMANodes; i++ {
-			driver.deviceNameToNUMANodeID[fmt.Sprintf("%snuma%d", "cpudev", i)] = i
+			driver.deviceNameToNUMANodeID[fmt.Sprintf("%s%d", devattr.CPUDeviceNUMAGroupedPrefix, i)] = i
 		}
 	}
 	return driver

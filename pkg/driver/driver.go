@@ -67,6 +67,11 @@ type CPUInfoProvider interface {
 	GetCPUTopology(logger logr.Logger) (*cpuinfo.CPUTopology, error)
 }
 
+type CPUEnumerator interface {
+	MapDeviceNamesToIDs() map[string]int
+	CreateDevices(logger logr.Logger) []resourceapi.Device
+}
+
 // CPUDriver is the structure that holds all the driver runtime information.
 type CPUDriver struct {
 	driverName              string
@@ -185,34 +190,21 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	plugin.refreshAllocationMetrics()
 	plugin.podConfigStore = store.NewPodConfig()
 
-	var devices []resourceapi.Device
+	var cpuEnum CPUEnumerator
 	if plugin.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
-		deviceInfos := groupedCPUDeviceInfos(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs)
-		deviceNameToDeviceID := make(map[string]int)
-		for _, dev := range deviceInfos {
-			switch plugin.cpuDeviceGroupBy {
-			case device.GROUP_BY_SOCKET:
-				deviceNameToDeviceID[dev.name] = dev.socketID
-			case device.GROUP_BY_NUMA_NODE:
-				deviceNameToDeviceID[dev.name] = dev.numaNodeID
-			}
-		}
+		cpuEnum = device.NewGroupedEnumerator(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs, plugin.pcieRootMapper)
 		switch plugin.cpuDeviceGroupBy {
 		case device.GROUP_BY_SOCKET:
-			plugin.deviceNameToSocketID = deviceNameToDeviceID
+			plugin.deviceNameToSocketID = cpuEnum.MapDeviceNamesToIDs()
 		case device.GROUP_BY_NUMA_NODE:
-			plugin.deviceNameToNUMANodeID = deviceNameToDeviceID
+			plugin.deviceNameToNUMANodeID = cpuEnum.MapDeviceNamesToIDs()
 		}
-		devices = createGroupedCPUDeviceSlices(logger, plugin.cpuDeviceGroupBy, deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
 	} else {
-		deviceInfos := cpuDeviceInfos(plugin.cpuTopology, plugin.reservedCPUs)
-		deviceNameToDeviceID := make(map[string]int)
-		for _, dev := range deviceInfos {
-			deviceNameToDeviceID[dev.name] = dev.cpu.CpuID
-		}
-		plugin.deviceNameToCPUID = deviceNameToDeviceID
-		devices = createCPUDeviceSlices(deviceInfos, plugin.pcieRootMapper, plugin.cpuTopology.SMTEnabled)
+		cpuEnum = device.NewCPUEnumerator(plugin.cpuTopology, plugin.reservedCPUs, plugin.pcieRootMapper)
+		plugin.deviceNameToCPUID = cpuEnum.MapDeviceNamesToIDs()
 	}
+
+	devices := cpuEnum.CreateDevices(logger)
 
 	if len(devices) > 0 {
 		// Chunk devices into slices of at most devicesPerResourceSlice
