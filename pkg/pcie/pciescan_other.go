@@ -16,7 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package device
+package pcie
 
 import (
 	"github.com/go-logr/logr"

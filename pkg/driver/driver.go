@@ -22,12 +22,14 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/containerd/nri/pkg/stub"
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	cpumetrics "github.com/kubernetes-sigs/dra-driver-cpu/pkg/metrics"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/store"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
@@ -37,22 +39,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/cpuset"
-)
-
-const (
-	// CPU_DEVICE_MODE_GROUPED exposes a single device for a group of CPUs.
-	CPU_DEVICE_MODE_GROUPED = "grouped"
-	// CPU_DEVICE_MODE_INDIVIDUAL exposes each CPU as a separate device.
-	CPU_DEVICE_MODE_INDIVIDUAL = "individual"
-)
-
-const (
-	// GROUP_BY_SOCKET groups CPUs by socket.
-	GROUP_BY_SOCKET = "socket"
-	// GROUP_BY_NUMA_NODE groups CPUs by NUMA node.
-	GROUP_BY_NUMA_NODE = "numanode"
-	// GROUP_BY_MACHINE groups CPUs by the entire machine.
-	GROUP_BY_MACHINE = "machine"
 )
 
 const (
@@ -81,6 +67,11 @@ type CPUInfoProvider interface {
 	GetCPUTopology(logger logr.Logger) (*cpuinfo.CPUTopology, error)
 }
 
+type CPUEnumerator interface {
+	MapDeviceNamesToIDs() map[string]int
+	CreateDevices(logger logr.Logger) []resourceapi.Device
+}
+
 // CPUDriver is the structure that holds all the driver runtime information.
 type CPUDriver struct {
 	driverName              string
@@ -95,8 +86,6 @@ type CPUDriver struct {
 	deviceNameToCPUID       map[string]int
 	deviceNameToSocketID    map[string]int
 	deviceNameToNUMANodeID  map[string]int
-	individualDeviceInfos   []cpuDeviceInfo
-	groupedDeviceInfos      []groupedCPUDeviceInfo
 	deviceSlices            [][]resourceapi.Device
 	reservedCPUs            cpuset.CPUSet
 	onlineCPUs              cpuset.CPUSet
@@ -201,25 +190,26 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	plugin.refreshAllocationMetrics()
 	plugin.podConfigStore = store.NewPodConfig()
 
-	if plugin.cpuDeviceMode == CPU_DEVICE_MODE_GROUPED {
-		plugin.groupedDeviceInfos = plugin.groupedCPUDeviceInfos()
-		for _, dev := range plugin.groupedDeviceInfos {
-			switch plugin.cpuDeviceGroupBy {
-			case GROUP_BY_SOCKET:
-				plugin.deviceNameToSocketID[dev.name] = dev.socketID
-			case GROUP_BY_NUMA_NODE:
-				plugin.deviceNameToNUMANodeID[dev.name] = dev.numaNodeID
-			}
+	var cpuEnum CPUEnumerator
+	if plugin.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
+		cpuEnum = device.NewGroupedEnumerator(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs, plugin.pcieRootMapper)
+		switch plugin.cpuDeviceGroupBy {
+		case device.GROUP_BY_SOCKET:
+			plugin.deviceNameToSocketID = cpuEnum.MapDeviceNamesToIDs()
+		case device.GROUP_BY_NUMA_NODE:
+			plugin.deviceNameToNUMANodeID = cpuEnum.MapDeviceNamesToIDs()
 		}
-		plugin.deviceSlices = plugin.createGroupedCPUDeviceSlices(logger)
 	} else {
-		plugin.individualDeviceInfos = plugin.cpuDeviceInfos()
-		for _, dev := range plugin.individualDeviceInfos {
-			plugin.deviceNameToCPUID[dev.name] = dev.cpu.CpuID
-		}
-		plugin.deviceSlices = plugin.createCPUDeviceSlices()
+		cpuEnum = device.NewCPUEnumerator(plugin.cpuTopology, plugin.reservedCPUs, plugin.pcieRootMapper)
+		plugin.deviceNameToCPUID = cpuEnum.MapDeviceNamesToIDs()
 	}
 
+	devices := cpuEnum.CreateDevices(logger)
+
+	if len(devices) > 0 {
+		// Chunk devices into slices of at most devicesPerResourceSlice
+		plugin.deviceSlices = slices.Collect(slices.Chunk(devices, plugin.devicesPerResourceSlice))
+	}
 	return plugin, nil
 }
 

@@ -32,7 +32,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/stdr"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/pcie"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 )
 
@@ -129,7 +129,7 @@ func (gen *mapFSGen) Collect(logger logr.Logger, sfs sysfs.FS) error {
 	}
 
 	for _, entry := range entries {
-		if !device.IsPCIeRootName(entry.Name()) {
+		if !pcie.IsPCIeRootName(entry.Name()) {
 			continue
 		}
 		busID := strings.TrimPrefix(entry.Name(), "pci")

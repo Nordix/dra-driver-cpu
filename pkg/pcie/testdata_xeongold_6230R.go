@@ -4,7 +4,7 @@
 // regenerate from the project root with:
 // go run tools/gen-pcie-testdata/main.go --func makeXeonGold6230RFixture --pkg device --build-tag amd64
 
-package device
+package pcie
 
 import (
 	"testing/fstest"

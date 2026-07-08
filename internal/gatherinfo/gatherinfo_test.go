@@ -27,7 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/driverconfig"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/gatherinfo"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"sigs.k8s.io/yaml"
 )
 
@@ -64,11 +64,11 @@ func TestRunWritesReportFile(t *testing.T) {
 	if report.DriverConfig.ReservedCPUs != "4-7" {
 		t.Fatalf("reservedCPUs = %q, want 4-7", report.DriverConfig.ReservedCPUs)
 	}
-	if report.DriverConfig.CPUDeviceMode != driver.CPU_DEVICE_MODE_INDIVIDUAL {
-		t.Fatalf("cpuDeviceMode = %q, want %q", report.DriverConfig.CPUDeviceMode, driver.CPU_DEVICE_MODE_INDIVIDUAL)
+	if report.DriverConfig.CPUDeviceMode != device.CPU_DEVICE_MODE_INDIVIDUAL {
+		t.Fatalf("cpuDeviceMode = %q, want %q", report.DriverConfig.CPUDeviceMode, device.CPU_DEVICE_MODE_INDIVIDUAL)
 	}
-	if report.DriverConfig.GroupBy != driver.GROUP_BY_SOCKET {
-		t.Fatalf("groupBy = %q, want %q", report.DriverConfig.GroupBy, driver.GROUP_BY_SOCKET)
+	if report.DriverConfig.GroupBy != device.GROUP_BY_SOCKET {
+		t.Fatalf("groupBy = %q, want %q", report.DriverConfig.GroupBy, device.GROUP_BY_SOCKET)
 	}
 	if report.DriverConfig.HostnameOverride != "node-a" {
 		t.Fatalf("hostnameOverride = %q, want node-a", report.DriverConfig.HostnameOverride)
@@ -89,8 +89,8 @@ func TestRunWritesReportToStdout(t *testing.T) {
 
 	report := readReport(t, []byte(stdout))
 	assertCommonReport(t, report)
-	if report.DriverConfig.GroupBy != driver.GROUP_BY_SOCKET {
-		t.Fatalf("groupBy = %q, want %q", report.DriverConfig.GroupBy, driver.GROUP_BY_SOCKET)
+	if report.DriverConfig.GroupBy != device.GROUP_BY_SOCKET {
+		t.Fatalf("groupBy = %q, want %q", report.DriverConfig.GroupBy, device.GROUP_BY_SOCKET)
 	}
 }
 

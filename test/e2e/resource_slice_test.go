@@ -19,7 +19,7 @@ package e2e
 import (
 	"context"
 
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
 	"github.com/kubernetes-sigs/dra-driver-cpu/test/pkg/fixture"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -85,35 +85,35 @@ var _ = ginkgo.Describe("Resource Attributes", ginkgo.Ordered, ginkgo.ContinueOn
 
 		var checks []attrCheck
 		switch cpuDeviceMode {
-		case driver.CPU_DEVICE_MODE_INDIVIDUAL:
+		case device.CPU_DEVICE_MODE_INDIVIDUAL:
 			checks = []attrCheck{
-				{driver.AttributeNUMANodeID, isInt},
-				{driver.AttributeSocketID, isInt},
-				{driver.AttributeSMTEnabled, isBool},
-				{driver.AttributeCacheL3ID, isInt},
-				{driver.AttributeCoreType, isString},
-				{driver.AttributeCoreID, isInt},
-				{driver.AttributeCPUID, isInt},
+				{device.AttributeNUMANodeID, isInt},
+				{device.AttributeSocketID, isInt},
+				{device.AttributeSMTEnabled, isBool},
+				{device.AttributeCacheL3ID, isInt},
+				{device.AttributeCoreType, isString},
+				{device.AttributeCoreID, isInt},
+				{device.AttributeCPUID, isInt},
 			}
 		default:
 			switch groupBy {
-			case driver.GROUP_BY_MACHINE:
+			case device.GROUP_BY_MACHINE:
 				checks = []attrCheck{
-					{driver.AttributeSMTEnabled, isBool},
-					{driver.AttributeNumCPUs, isInt},
+					{device.AttributeSMTEnabled, isBool},
+					{device.AttributeNumCPUs, isInt},
 				}
-			case driver.GROUP_BY_NUMA_NODE:
+			case device.GROUP_BY_NUMA_NODE:
 				checks = []attrCheck{
-					{driver.AttributeNUMANodeID, isInt},
-					{driver.AttributeSocketID, isInt},
-					{driver.AttributeSMTEnabled, isBool},
-					{driver.AttributeNumCPUs, isInt},
+					{device.AttributeNUMANodeID, isInt},
+					{device.AttributeSocketID, isInt},
+					{device.AttributeSMTEnabled, isBool},
+					{device.AttributeNumCPUs, isInt},
 				}
-			case driver.GROUP_BY_SOCKET:
+			case device.GROUP_BY_SOCKET:
 				checks = []attrCheck{
-					{driver.AttributeSocketID, isInt},
-					{driver.AttributeSMTEnabled, isBool},
-					{driver.AttributeNumCPUs, isInt},
+					{device.AttributeSocketID, isInt},
+					{device.AttributeSMTEnabled, isBool},
+					{device.AttributeNumCPUs, isInt},
 				}
 			default:
 				ginkgo.Fail("unknown CPU device group-by configuration: " + groupBy)

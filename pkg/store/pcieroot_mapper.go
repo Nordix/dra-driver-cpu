@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/pcie"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/cpuset"
@@ -29,8 +29,8 @@ import (
 // PCIeRootMapper maps a logical cpu by its ID to the PCIe roots closest to it.
 // Meant to be initialized once at startup and consumed by readers, possibly concurrently.
 type PCIeRootMapper struct {
-	pcieDomains       []device.PCIeDomain
-	cpuIDToPCIeDomain map[int][]*device.PCIeDomain
+	pcieDomains       []pcie.PCIeDomain
+	cpuIDToPCIeDomain map[int][]*pcie.PCIeDomain
 }
 
 func NewPCIeRootMapper() *PCIeRootMapper {
@@ -40,7 +40,7 @@ func NewPCIeRootMapper() *PCIeRootMapper {
 // Probe scans the machine and builds the CPU -> PCIe root mapping
 func (prm *PCIeRootMapper) Probe(logger logr.Logger, sfs sysfs.FS, onlineCPUs cpuset.CPUSet) error {
 	var err error
-	prm.pcieDomains, err = device.PCIeDomainsFromFS(logger, sfs)
+	prm.pcieDomains, err = pcie.PCIeDomainsFromFS(logger, sfs)
 	if err != nil {
 		return fmt.Errorf("failed to list PCIe domains: %w", err)
 	}
@@ -52,13 +52,13 @@ func (prm *PCIeRootMapper) Probe(logger logr.Logger, sfs sysfs.FS, onlineCPUs cp
 	} else {
 		logger.Info("PCIe domains: none detected, device attributes will not be available")
 	}
-	extraCPUs := device.FindOrphanedCPUs(prm.pcieDomains, onlineCPUs)
+	extraCPUs := pcie.FindOrphanedCPUs(prm.pcieDomains, onlineCPUs)
 	if !extraCPUs.IsEmpty() {
 		// not critical, intentionally continue
 		logger.Info("PCIe domains: detected cpus not local to any detected PCIe Root", "CPUs", extraCPUs.String())
 	}
 
-	prm.cpuIDToPCIeDomain = device.MapCPUsToPCIeDomain(prm.pcieDomains, onlineCPUs)
+	prm.cpuIDToPCIeDomain = pcie.MapCPUsToPCIeDomain(prm.pcieDomains, onlineCPUs)
 	logger.V(4).Info("mapped CPUs to PCIe domains", "count", len(prm.cpuIDToPCIeDomain))
 
 	return nil

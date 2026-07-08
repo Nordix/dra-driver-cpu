@@ -20,14 +20,14 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/device"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/pcie"
 )
 
 func TestGetPCIeRootsForCPU(t *testing.T) {
 	// random addresses, no special meaning
-	domA := device.PCIeDomain{RootName: "pci0000:00"}
-	domB := device.PCIeDomain{RootName: "pci0000:17"}
-	domC := device.PCIeDomain{RootName: "pci0000:3a"}
+	domA := pcie.PCIeDomain{RootName: "pci0000:00"}
+	domB := pcie.PCIeDomain{RootName: "pci0000:17"}
+	domC := pcie.PCIeDomain{RootName: "pci0000:3a"}
 
 	tests := []struct {
 		name           string
@@ -50,8 +50,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "cpu not in mapping returns empty",
 			mapper: &PCIeRootMapper{
-				pcieDomains:       []device.PCIeDomain{domA},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{},
+				pcieDomains:       []pcie.PCIeDomain{domA},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{},
 			},
 			cpuIDs:         []int{0, 1}, // any value is ok
 			expectedResult: []string{},
@@ -59,8 +59,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "single cpu single domain",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA},
 				},
 			},
@@ -70,8 +70,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "single cpu multiple domains",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA, domB},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA, domB},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA, &domB},
 				},
 			},
@@ -81,8 +81,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "multiple cpus same domain, deduplicating",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA},
 					1: {&domA},
 				},
@@ -93,8 +93,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "multiple cpus different domains",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA, domB, domC},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA, domB, domC},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA},
 					1: {&domB},
 					2: {&domC},
@@ -106,8 +106,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "mixed known and unknown cpus",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA},
 				},
 			},
@@ -117,8 +117,8 @@ func TestGetPCIeRootsForCPU(t *testing.T) {
 		{
 			name: "no cpuIDs with populated mapper returns empty",
 			mapper: &PCIeRootMapper{
-				pcieDomains: []device.PCIeDomain{domA},
-				cpuIDToPCIeDomain: map[int][]*device.PCIeDomain{
+				pcieDomains: []pcie.PCIeDomain{domA},
+				cpuIDToPCIeDomain: map[int][]*pcie.PCIeDomain{
 					0: {&domA},
 				},
 			},

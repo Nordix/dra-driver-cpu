@@ -20,6 +20,33 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 )
 
+const (
+	// CPU_DEVICE_MODE_GROUPED exposes a single device for a group of CPUs.
+	CPU_DEVICE_MODE_GROUPED = "grouped"
+	// CPU_DEVICE_MODE_INDIVIDUAL exposes each CPU as a separate device.
+	CPU_DEVICE_MODE_INDIVIDUAL = "individual"
+)
+
+const (
+	// GROUP_BY_SOCKET groups CPUs by socket.
+	GROUP_BY_SOCKET = "socket"
+	// GROUP_BY_NUMA_NODE groups CPUs by NUMA node.
+	GROUP_BY_NUMA_NODE = "numanode"
+	// GROUP_BY_MACHINE groups CPUs by the entire machine.
+	GROUP_BY_MACHINE = "machine"
+)
+
+const (
+	AttributeNUMANodeID resourceapi.QualifiedName = "dra.cpu/numaNodeID"
+	AttributeSocketID   resourceapi.QualifiedName = "dra.cpu/socketID"
+	AttributeSMTEnabled resourceapi.QualifiedName = "dra.cpu/smtEnabled"
+	AttributeCacheL3ID  resourceapi.QualifiedName = "dra.cpu/cacheL3ID"
+	AttributeCoreType   resourceapi.QualifiedName = "dra.cpu/coreType"
+	AttributeCoreID     resourceapi.QualifiedName = "dra.cpu/coreID"
+	AttributeCPUID      resourceapi.QualifiedName = "dra.cpu/cpuID"
+	AttributeNumCPUs    resourceapi.QualifiedName = "dra.cpu/numCPUs"
+)
+
 // SetCompatibilityAttributes add attributes to enable compatibility (e.g. alignment) with other
 // DRA resource drivers leveraging attributes which are not kubernetes standard.
 // This is the "staging area" which enables attribute sharing until (or before) they become standard.
