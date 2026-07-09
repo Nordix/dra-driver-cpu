@@ -30,7 +30,6 @@ import (
 
 	"github.com/go-logr/stdr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 	"github.com/kubernetes-sigs/dra-driver-cpu/test/pkg/discovery"
 	"k8s.io/utils/cpuset"
 )
@@ -89,8 +88,10 @@ func affinityScanBoundFromTopology(topo *cpuinfo.CPUTopology) int {
 
 func main() {
 	logger := stdr.New(log.Default())
+	// Read the container's cgroup view, intentionally ignoring HOST_ROOT.
+	containerSysfs := os.DirFS("/sys")
 	for {
-		cpus, err := cpuSet(sysfs.Host())
+		cpus, err := cpuSet(containerSysfs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error determining allocated cpus: %v\n", err)
 			os.Exit(1)
