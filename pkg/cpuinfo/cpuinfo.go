@@ -32,6 +32,13 @@ import (
 	"k8s.io/utils/cpuset"
 )
 
+const procfsRoot = "/proc"
+
+// ProcfsRoot returns the host procfs root, honoring HOST_ROOT when set.
+func ProcfsRoot() string {
+	return path.Join(os.Getenv("HOST_ROOT"), procfsRoot)
+}
+
 func OnlineCPUs(logger logr.Logger, sysfs fs.ReadLinkFS) (cpuset.CPUSet, error) {
 	cpuData, err := fs.ReadFile(sysfs, filepath.Join("devices", "system", "cpu", "online"))
 	if err != nil {
@@ -485,38 +492,6 @@ func readLines(sysfs fs.FS, filename string) ([]string, error) {
 	lines := strings.Split(string(data), "\n")
 
 	return lines, nil
-}
-
-func hostRoot(combineWith ...string) string {
-	return GetEnv("HOST_ROOT", "/", combineWith...)
-}
-
-func hostSys(combineWith ...string) string {
-	return hostRoot(combinePath("sys", combineWith...))
-}
-
-// GetEnv retrieves the environment variable key, or uses the default value.
-func GetEnv(key string, otherwise string, combineWith ...string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		value = otherwise
-	}
-
-	return combinePath(value, combineWith...)
-}
-
-func combinePath(value string, combineWith ...string) string {
-	switch len(combineWith) {
-	case 0:
-		return value
-	case 1:
-		return filepath.Join(value, combineWith[0])
-	default:
-		all := make([]string, len(combineWith)+1)
-		all[0] = value
-		copy(all[1:], combineWith)
-		return filepath.Join(all...)
-	}
 }
 
 // TODO: Refactor topology representation to handle asymmetric CPU distributions.

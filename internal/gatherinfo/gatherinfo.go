@@ -129,8 +129,7 @@ func (o Options) driverCmdlinePath() (string, error) {
 }
 
 func defaultDriverCmdlinePath() (string, error) {
-	procRoot := cpuinfo.GetEnv("HOST_ROOT", "/", "proc")
-	cmdlinePath, err := findDriverCmdlinePath(procRoot, driverProcessName)
+	cmdlinePath, err := findDriverCmdlinePath(cpuinfo.ProcfsRoot(), driverProcessName)
 	if err != nil {
 		return "", fmt.Errorf("failed to find running %q process: %w", driverProcessName, err)
 	}
@@ -192,12 +191,11 @@ func createOutputFile(parentDir string, now time.Time, pid int) (*os.File, strin
 
 func collectReport(logger logr.Logger, defaults driverconfig.Config, driverCmdlinePath string) (Report, error) {
 	driverConfig := detectDriverConfig(defaults, driverCmdlinePath)
-	base := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
 	overlayPath := driverConfig.SysFSOverlay
 	if overlayPath != "" {
 		overlayPath = driverFilesystemPath(driverCmdlinePath, overlayPath)
 	}
-	sfs, err := sysfs.NewOverlayFromFile(base, overlayPath)
+	sfs, err := sysfs.NewOverlayFromFile(sysfs.Host(), overlayPath)
 	if err != nil {
 		return Report{}, fmt.Errorf("load configured sysfs overlay %q from driver filesystem: %w", driverConfig.SysFSOverlay, err)
 	}

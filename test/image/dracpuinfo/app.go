@@ -30,8 +30,7 @@ import (
 
 func main() {
 	logger := stdr.New(log.Default())
-	hostSysFS := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
-	cpuInfoProvider := cpuinfo.NewSystemCPUInfo(hostSysFS)
+	cpuInfoProvider := cpuinfo.NewSystemCPUInfo(sysfs.Host())
 	cpus, err := cpuInfoProvider.GetCPUInfos(logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error getting cpu info: %v\n", err)

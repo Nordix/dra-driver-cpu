@@ -21,6 +21,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -41,12 +42,12 @@ const (
 	affinityScanMax = 2048
 )
 
-func cpuSetPath(sysRoot string) string {
-	return filepath.Join(sysRoot, cgroupPath, cpusetFile)
+func cpuSetPath() string {
+	return filepath.Join(cgroupPath, cpusetFile)
 }
 
-func cpuSet(sysRoot string) (cpuset.CPUSet, error) {
-	data, err := os.ReadFile(cpuSetPath(sysRoot))
+func cpuSet(sfs fs.FS) (cpuset.CPUSet, error) {
+	data, err := fs.ReadFile(sfs, cpuSetPath())
 	if err != nil {
 		return cpuset.New(), err
 	}
@@ -87,8 +88,10 @@ func affinityScanBoundFromTopology(topo *cpuinfo.CPUTopology) int {
 
 func main() {
 	logger := stdr.New(log.Default())
+	// Read the container's cgroup view, intentionally ignoring HOST_ROOT.
+	containerSysfs := os.DirFS("/sys")
 	for {
-		cpus, err := cpuSet("/sys")
+		cpus, err := cpuSet(containerSysfs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error determining allocated cpus: %v\n", err)
 			os.Exit(1)

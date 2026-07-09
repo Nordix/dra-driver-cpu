@@ -35,8 +35,7 @@ func getAffinity(logger logr.Logger) (cpuset.CPUSet, error) {
 		return cpuset.New(), err
 	}
 	maxCPUID := 0
-	hostSysFS := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
-	if topo, err := cpuinfo.NewSystemCPUInfo(hostSysFS).GetCPUTopology(logger); err == nil {
+	if topo, err := cpuinfo.NewSystemCPUInfo(sysfs.Host()).GetCPUTopology(logger); err == nil {
 		maxCPUID = affinityScanBoundFromTopology(topo)
 	}
 	return affinityFromMask(&unixCS, maxCPUID), nil

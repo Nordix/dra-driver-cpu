@@ -34,7 +34,6 @@ import (
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/ctxlog"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/driverconfig"
 	"github.com/kubernetes-sigs/dra-driver-cpu/internal/gatherinfo"
-	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/driver"
 	cpumetrics "github.com/kubernetes-sigs/dra-driver-cpu/pkg/metrics"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
@@ -228,8 +227,7 @@ func run(logger logr.Logger) error {
 }
 
 func newSysFS(logger logr.Logger, overlayPath string) (sysfs.FS, error) {
-	base := os.DirFS(cpuinfo.GetEnv("HOST_ROOT", "/", "sys")).(sysfs.FS)
-	sfs, err := sysfs.NewOverlayFromFile(base, overlayPath)
+	sfs, err := sysfs.NewOverlayFromFile(sysfs.Host(), overlayPath)
 	if err != nil {
 		return nil, err
 	}

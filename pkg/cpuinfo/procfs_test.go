@@ -14,22 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sysfs
+package cpuinfo
 
 import (
-	"io/fs"
-	"os"
-	"path"
+	"path/filepath"
+	"testing"
 )
 
-const Root = "/sys"
+func TestProcfsRoot(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		t.Setenv("HOST_ROOT", "")
+		if got, want := ProcfsRoot(), "/proc"; got != want {
+			t.Errorf("ProcfsRoot() = %q, want %q", got, want)
+		}
+	})
 
-type FS interface {
-	fs.ReadLinkFS
-	fs.ReadDirFS
-}
-
-// Host returns the host sysfs, honoring HOST_ROOT when set.
-func Host() FS {
-	return os.DirFS(path.Join(os.Getenv("HOST_ROOT"), Root)).(FS)
+	t.Run("host root", func(t *testing.T) {
+		hostRoot := t.TempDir()
+		t.Setenv("HOST_ROOT", hostRoot)
+		if got, want := ProcfsRoot(), filepath.Join(hostRoot, "proc"); got != want {
+			t.Errorf("ProcfsRoot() = %q, want %q", got, want)
+		}
+	})
 }

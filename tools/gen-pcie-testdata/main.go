@@ -32,6 +32,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/stdr"
+	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/pcie"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/sysfs"
 )
@@ -42,10 +43,10 @@ const (
 )
 
 func main() {
-	sysfsRoot := sysfs.Root
+	var sysfsRoot string
 	gen := newMapFSGen()
 
-	flag.StringVar(&sysfsRoot, "sysfs-root", sysfsRoot, "sysfs root path")
+	flag.StringVar(&sysfsRoot, "sysfs-root", sysfsRoot, "sysfs root path (defaults to HOST_ROOT/sys)")
 	flag.StringVar(&gen.BuildTag, "build-tag", gen.BuildTag, "inject a //go:build constraint for the current architecture, set \"\" to disable")
 	flag.StringVar(&gen.Func, "func", gen.Func, "function name for the generated MapFS fixture")
 	flag.StringVar(&gen.Pkg, "pkg", gen.Pkg, "package name for the generated MapFS fixture")
@@ -57,8 +58,12 @@ func main() {
 		}
 	}
 
-	sfs := os.DirFS(sysfsRoot).(sysfs.FS)
+	sfs := sysfs.Host()
+	if sysfsRoot != "" {
+		sfs = os.DirFS(sysfsRoot).(sysfs.FS)
+	}
 	logger := stdr.New(log.Default())
+	logger.Info("using filesystem roots", "sysfs", sfs, "procfs", cpuinfo.ProcfsRoot())
 
 	// need to silence output on the happy path so we can
 	// trivially redirect the output to a file
@@ -186,7 +191,7 @@ func {{.Func}}() fstest.MapFS {
 // sanitizes it into a CamelCase Go identifier fragment.
 // Returns empty string if detection fails.
 func detectCPUModel() string {
-	data, err := os.ReadFile("/proc/cpuinfo")
+	data, err := os.ReadFile(filepath.Join(cpuinfo.ProcfsRoot(), "cpuinfo"))
 	if err != nil {
 		return ""
 	}

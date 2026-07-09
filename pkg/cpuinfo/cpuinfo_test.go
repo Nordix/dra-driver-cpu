@@ -368,7 +368,7 @@ func TestGetCPUInfos(t *testing.T) {
 
 			createFakeCPUTopology(t, tmpDir, tc.topology)
 
-			provider := NewSystemCPUInfo(os.DirFS(hostSys()).(sysfs.FS))
+			provider := NewSystemCPUInfo(sysfs.Host())
 			cpuInfos, err := provider.GetCPUInfos(logger)
 			if err != nil {
 				t.Fatalf("GetCPUInfos() failed: %v", err)
@@ -478,7 +478,7 @@ func TestGetCPUInfos_ErrorScenarios(t *testing.T) {
 			// Apply the specific modification for the current test case.
 			tc.setup(t, tmpDir)
 
-			provider := NewSystemCPUInfo(os.DirFS(hostSys()).(sysfs.FS))
+			provider := NewSystemCPUInfo(sysfs.Host())
 			cpuInfos, err := provider.GetCPUInfos(logger)
 			if tc.expectedErrorSubstring != "" {
 				if err == nil {
@@ -596,7 +596,7 @@ func TestSMTDetection(t *testing.T) {
 				}
 			}
 
-			provider := NewSystemCPUInfo(os.DirFS(hostSys()).(sysfs.FS))
+			provider := NewSystemCPUInfo(sysfs.Host())
 			topo, err := provider.GetCPUTopology(logger)
 			if err != nil {
 				t.Fatalf("GetCPUTopology() failed: %v", err)
@@ -650,7 +650,7 @@ func TestGetCPUTopology(t *testing.T) {
 			t.Setenv("HOST_ROOT", tmpDir)
 			createFakeCPUTopology(t, tmpDir, tc.topology)
 
-			provider := NewSystemCPUInfo(os.DirFS(hostSys()).(sysfs.FS))
+			provider := NewSystemCPUInfo(sysfs.Host())
 			topo, err := provider.GetCPUTopology(logger)
 			if err != nil {
 				t.Fatalf("GetCPUTopology() failed: %v", err)

@@ -113,7 +113,7 @@ func (pr Providers) EnsureCPUInfo() CPUInfoProvider {
 
 func (pr Providers) EnsureSysFS() sysfs.FS {
 	if pr.SysFS == nil {
-		return os.DirFS(sysfs.Root).(sysfs.FS)
+		return sysfs.Host()
 	}
 	return pr.SysFS
 }
