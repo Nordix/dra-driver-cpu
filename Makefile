@@ -188,6 +188,7 @@ ifneq ($(DRACPU_E2E_VERBOSE),)
 	@echo "creating a kind cluster for mode=$(DRACPU_E2E_CPU_DEVICE_MODE)"
 endif
 	kind create cluster --name ${CLUSTER_NAME} --image=kindest/node:$(KIND_K8S_VERSION) --config hack/ci/kind-ci.yaml
+	kubectl wait --for=create node/${CLUSTER_NAME}-worker --timeout=120s
 	kubectl label node ${CLUSTER_NAME}-worker node-role.kubernetes.io/worker=''
 	kind load docker-image --name ${CLUSTER_NAME} ${IMAGE_CI} ${IMAGE_TEST}
 	$(HELM) install dra-driver-cpu ${HELM_CHART} ${HELM_COMMON_ARGS} \
