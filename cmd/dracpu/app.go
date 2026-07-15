@@ -53,10 +53,19 @@ const (
 
 var (
 	driverFlags = driverconfig.Default()
-	ready       atomic.Bool
+	configFile  string
+
+	ready atomic.Bool
 )
 
 func init() {
+	// --config is kept outside Config to avoid a self-referential loop,
+	// following the convention used by kubeadm and similar tools.
+	flag.StringVar(&configFile, "config", "",
+		"Path to a YAML driver configuration file. Configuration values are applied in order: "+
+			"built-in defaults, then file values, then explicit CLI flags. "+
+			"Only values explicitly set on the command line override earlier layers. "+
+			"If empty, only CLI flags and built-in defaults are used.")
 	driverFlags.AddFlags(flag.CommandLine)
 }
 
@@ -85,31 +94,35 @@ func main() {
 
 	logger := ctxlog.Setup()
 
-	if err := runDriver(logger); err != nil {
+	cfg, err := driverconfig.Load(driverFlags, configFile, flag.CommandLine, logger)
+	if err != nil {
+		logger.Error(err, "failed to load configuration")
+		os.Exit(1)
+	}
+
+	if err := runDriver(logger, cfg); err != nil {
 		os.Exit(1)
 	}
 }
 
-func runDriver(logger logr.Logger) error {
-	if err := run(logger); err != nil {
+func runDriver(logger logr.Logger, cfg driverconfig.Config) error {
+	if err := run(logger, cfg); err != nil {
 		logger.Error(err, "failed to run")
 		return err
 	}
 	return nil
 }
 
-func run(logger logr.Logger) error {
+func run(logger logr.Logger, cfg driverconfig.Config) error {
 	printVersion(logger)
-	flag.VisitAll(func(f *flag.Flag) {
-		logger.Info("FLAG", "name", f.Name, "value", f.Value.String())
-	})
+	logger.Info("CONFIG", cfg.LogValues()...)
 
-	reservedCPUSet, err := cpuset.Parse(driverFlags.ReservedCPUs)
+	reservedCPUSet, err := cpuset.Parse(cfg.ReservedCPUs)
 	if err != nil {
 		return fmt.Errorf("failed to parse reserved CPUs: %w", err)
 	}
 
-	sfs, err := newSysFS(logger, driverFlags.SysFSOverlay)
+	sfs, err := newSysFS(logger, cfg.SysFSOverlay)
 	if err != nil {
 		return err
 	}
@@ -126,7 +139,7 @@ func run(logger logr.Logger) error {
 	// Add metrics handler
 	mux.Handle("/metrics", promhttp.Handler())
 	server := &http.Server{
-		Addr:              driverFlags.BindAddress,
+		Addr:              cfg.BindAddress,
 		Handler:           mux,
 		IdleTimeout:       120 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -141,8 +154,8 @@ func run(logger logr.Logger) error {
 	}()
 
 	var restConfig *rest.Config
-	if driverFlags.Kubeconfig != "" {
-		restConfig, err = clientcmd.BuildConfigFromFlags("", driverFlags.Kubeconfig)
+	if cfg.Kubeconfig != "" {
+		restConfig, err = clientcmd.BuildConfigFromFlags("", cfg.Kubeconfig)
 	} else {
 		// creates the in-cluster config
 		restConfig, err = rest.InClusterConfig()
@@ -162,7 +175,7 @@ func run(logger logr.Logger) error {
 		return fmt.Errorf("can not create client-go client: %w", err)
 	}
 
-	nodeName, err := nodeutil.GetHostname(driverFlags.HostnameOverride)
+	nodeName, err := nodeutil.GetHostname(cfg.HostnameOverride)
 	if err != nil {
 		return fmt.Errorf("can not obtain the node name, use the hostname-override flag if you want to set it to a specific value: %w", err)
 	}
@@ -183,9 +196,9 @@ func run(logger logr.Logger) error {
 		DriverName:       driverName,
 		NodeName:         nodeName,
 		ReservedCPUs:     reservedCPUSet,
-		CPUDeviceMode:    driverFlags.CPUDeviceMode,
-		CPUDeviceGroupBy: driverFlags.GroupBy,
-		ExposePCIeRoots:  driverFlags.ExposePCIeRoots,
+		CPUDeviceMode:    cfg.CPUDeviceMode,
+		CPUDeviceGroupBy: cfg.GroupBy,
+		ExposePCIeRoots:  cfg.ExposePCIeRoots,
 		Metrics:          cpumetrics.New(prometheus.DefaultRegisterer),
 	}
 	driverProviders := driver.Providers{

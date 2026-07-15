@@ -177,6 +177,32 @@ func TestRunFailsWhenDriverProcessIsMissing(t *testing.T) {
 	}
 }
 
+// TestRunReadsConfigFile: config-file values appear in the report when --config is used.
+func TestRunReadsConfigFile(t *testing.T) {
+	driverRoot := t.TempDir()
+	configPath := "/etc/dra-driver-cpu/driver-config.yaml"
+	writeTestFile(t, filepath.Join(driverRoot, strings.TrimPrefix(configPath, "/")), []byte("reservedCPUs: \"2-3\"\n"))
+
+	hostRoot := setupFakeHost(t, []byte("/dracpu\x00--config="+configPath+"\x00"))
+	if err := os.Symlink(driverRoot, filepath.Join(hostRoot, "proc", "42", "root")); err != nil {
+		t.Fatalf("create driver root link: %v", err)
+	}
+
+	stdout, err := captureStdout(t, func() error {
+		return gatherinfo.Run([]string{"--stdout"}, gatherinfo.Options{
+			DriverConfig: driverconfig.Default(),
+		}, logr.Discard())
+	})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	report := readReport(t, []byte(stdout))
+	if report.DriverConfig.ReservedCPUs != "2-3" {
+		t.Fatalf("reservedCPUs = %q, want 2-3 (from config file)", report.DriverConfig.ReservedCPUs)
+	}
+}
+
 func TestRunRejectsStdoutWithOutputDir(t *testing.T) {
 	err := gatherinfo.Run([]string{"--stdout", "--output-dir=/tmp"}, gatherinfo.Options{}, logr.Discard())
 	if err == nil {
