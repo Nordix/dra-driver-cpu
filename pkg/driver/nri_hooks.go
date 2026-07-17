@@ -91,6 +91,7 @@ func (cp *CPUDriver) Synchronize(ctx context.Context, pods []*api.PodSandbox, co
 	cp.podConfigStore = podConfigStore
 	cp.cpuAllocationStore = cpuAllocationStore
 	cp.claimTracker = claimTracker
+	cp.refreshAllocationMetrics()
 
 	// Reconcile container CPU masks to handle cases where the NRI plugin might have crashed
 	// or restarted and missed updating the cgroup settings.
@@ -250,6 +251,7 @@ func (cp *CPUDriver) StopContainer(ctx context.Context, pod *api.PodSandbox, ctr
 			cLogger := logger.WithValues("claimUID", claimUID)
 			cp.cpuAllocationStore.RemoveResourceClaimAllocation(cLogger, claimUID)
 		}
+		cp.refreshAllocationMetrics()
 		// Remove the guaranteed CPUs from the containers with shared CPUs.
 		updates = cp.getSharedContainerUpdates(logger, types.UID(ctr.GetId()))
 		cp.claimTracker.Cleanup(claimUIDs...)
