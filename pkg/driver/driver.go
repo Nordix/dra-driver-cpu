@@ -216,7 +216,7 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 // Start registers the plugin with kubelet, starts the NRI plugin, and begins
 // async resource publication. Setup must have been called first.
 func (cp *CPUDriver) Start(ctx context.Context) (<-chan error, error) {
-	_, logger := ctxlog.WithValues(ctx, "driver", cp.driverName)
+	ctx, logger := ctxlog.WithValues(ctx, "driver", cp.driverName)
 
 	asyncErr := make(chan error, 1)
 
