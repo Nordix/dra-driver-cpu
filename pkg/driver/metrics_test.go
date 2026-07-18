@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/containerd/nri/pkg/api"
 	"github.com/go-logr/logr/testr"
 	"github.com/kubernetes-sigs/dra-driver-cpu/pkg/cpuinfo"
 	cpumetrics "github.com/kubernetes-sigs/dra-driver-cpu/pkg/metrics"
@@ -46,14 +47,17 @@ func newMetricsTestDriver(t *testing.T) (*CPUDriver, *prometheus.Registry) {
 	recorder := cpumetrics.New(reg)
 	cpuStore := store.NewCPUAllocation(topo, cpuset.New())
 	driver := &CPUDriver{
-		driverName: testDriverName,
+		driverName:  testDriverName,
+		cpuTopology: topo,
 		deviceNameToCPUID: map[string]int{
 			"cpudev0": 0,
 			"cpudev1": 1,
 			"cpudev2": 2,
 			"cpudev3": 3,
 		},
+		podConfigStore:     store.NewPodConfig(),
 		cpuAllocationStore: cpuStore,
+		claimTracker:       store.NewClaimTracker(),
 		cdiMgr:             newMockCdiMgr(),
 		metrics:            recorder,
 	}
@@ -160,6 +164,29 @@ func TestMetricsAllocationStateAndClaimSize(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, prepared["claim-alloc"].Err)
 	require.Equal(t, float64(1), metricValue(t, reg, "dra_cpu_claim_allocated_cpus", nil), "duplicate prepare must not record a new allocation size")
+}
+
+func TestMetricsNRIAllocationState(t *testing.T) {
+	driver, reg := newMetricsTestDriver(t)
+	claimUID := types.UID("claim-nri")
+	claimCPUs := cpuset.New(0, 1)
+	pod := &api.PodSandbox{Id: "sandbox", Uid: "pod-uid"}
+	container := &api.Container{
+		Id: "container", PodSandboxId: pod.Id, Name: "app",
+		Env: []string{fmt.Sprintf("%s_%s=%s", cdiEnvVarPrefix, claimUID, claimCPUs.String())},
+	}
+
+	_, err := driver.Synchronize(context.Background(), []*api.PodSandbox{pod}, []*api.Container{container})
+	require.NoError(t, err)
+	require.Equal(t, float64(2), metricValue(t, reg, "dra_cpu_allocated_cpus", nil))
+	require.Equal(t, float64(2), metricValue(t, reg, "dra_cpu_available_cpus", nil))
+	require.Equal(t, float64(1), metricValue(t, reg, "dra_cpu_resource_claims_active", nil))
+
+	_, err = driver.StopContainer(context.Background(), pod, container)
+	require.NoError(t, err)
+	require.Equal(t, float64(0), metricValue(t, reg, "dra_cpu_allocated_cpus", nil))
+	require.Equal(t, float64(4), metricValue(t, reg, "dra_cpu_available_cpus", nil))
+	require.Equal(t, float64(0), metricValue(t, reg, "dra_cpu_resource_claims_active", nil))
 }
 
 func TestMetricsUnprepareResults(t *testing.T) {
