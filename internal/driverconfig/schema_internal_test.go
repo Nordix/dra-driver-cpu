@@ -19,10 +19,7 @@ package driverconfig
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -59,30 +56,5 @@ func TestGenerateDriverConfigSchema_CoversAllFields(t *testing.T) {
 		if !present {
 			t.Errorf("Config field %q (json key %q) is missing from the generated schema", field.Name, jsonName)
 		}
-	}
-}
-
-// TestGenerateDriverConfigSchema_MatchesCheckedInFile: the checked-in
-// driverconfig.schema.json must match the generator's output; run 'make
-// driverconfig-schema' to regenerate it after changing Config.
-func TestGenerateDriverConfigSchema_MatchesCheckedInFile(t *testing.T) {
-	want, err := GenerateDriverConfigSchema()
-	if err != nil {
-		t.Fatalf("GenerateDriverConfigSchema() error: %v", err)
-	}
-
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-	schemaPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "deployment", "helm", "dra-driver-cpu", "driverconfig.schema.json")
-
-	got, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Fatalf("reading %s: %v", schemaPath, err)
-	}
-
-	if string(got) != string(want) {
-		t.Errorf("%s is out of date; run 'make driverconfig-schema' to regenerate it.\ngot:\n%s\nwant:\n%s", schemaPath, got, want)
 	}
 }

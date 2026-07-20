@@ -28,8 +28,5 @@ jobs:
       - name: Check helm-docs is up to date
         run: make helm-docs-check
 
-      - name: Check driverconfig.schema.json is up to date
-        run: make driverconfig-schema-check
-
       - name: Check values.schema.json is up to date
         run: make helm-schema-check

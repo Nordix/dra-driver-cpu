@@ -25,7 +25,7 @@ type Config struct {
 	HostnameOverride string `json:"hostnameOverride,omitempty"`
 	BindAddress      string `json:"bindAddress,omitempty"`
 	ReservedCPUs     string `json:"reservedCPUs,omitempty"`
-	CPUDeviceMode    string `json:"cpuDeviceMode"`
+	CPUDeviceMode    string `json:"cpuDeviceMode,omitempty"`
 	GroupBy          string `json:"groupBy,omitempty"`
 	ExposePCIeRoots  bool   `json:"exposePCIeRoots,omitempty"`
 	ShowMetrics      bool   `json:"showMetrics,omitempty"`
