@@ -38,7 +38,24 @@ func buildConfMap(filePath string) (map[string]any, error) {
 	}
 	delete(confMap, "apiVersion")
 
+	if err := rejectExcludedFields(confMap); err != nil {
+		return nil, err
+	}
+
 	return confMap, nil
+}
+
+// rejectExcludedFields errors out if confMap sets any key in
+// schemaExcludedFields; those fields aren't configurable via the config
+// file regardless of how it's supplied (Helm's driverConfig or a raw
+// --config file).
+func rejectExcludedFields(confMap map[string]any) error {
+	for jsonKey, alternative := range schemaExcludedFields {
+		if _, ok := confMap[jsonKey]; ok {
+			return fmt.Errorf("field %q is not configurable via the config file; %s", jsonKey, alternative)
+		}
+	}
+	return nil
 }
 
 // loadFile reads and parses the YAML file at path into a map.

@@ -50,7 +50,7 @@ func TestGenerateDriverConfigSchema_CoversAllFields(t *testing.T) {
 			continue
 		}
 		_, present := doc.Properties[jsonName]
-		if schemaExcludedFields[jsonName] {
+		if _, excluded := schemaExcludedFields[jsonName]; excluded {
 			if present {
 				t.Errorf("Config field %q (json key %q) is marked excluded but appears in the generated schema", field.Name, jsonName)
 			}

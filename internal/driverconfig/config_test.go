@@ -66,11 +66,10 @@ func TestLoad_FileOverridesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := writeFile(t, dir, "config.yaml", `
 apiVersion: v1alpha1
-bindAddress: ":9090"
 cpuDeviceMode: individual
 groupBy: socket
 reservedCPUs: "0-3"
-exposePCIeRoots: true
+sysfsOverlay: /custom/sysfs
 `)
 
 	cfg := driverconfig.Default()
@@ -79,11 +78,10 @@ exposePCIeRoots: true
 	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
-	assert.Equal(t, ":9090", result.BindAddress)
 	assert.Equal(t, device.CPU_DEVICE_MODE_INDIVIDUAL, result.CPUDeviceMode)
 	assert.Equal(t, device.GROUP_BY_SOCKET, result.GroupBy)
 	assert.Equal(t, "0-3", result.ReservedCPUs)
-	assert.True(t, result.ExposePCIeRoots)
+	assert.Equal(t, "/custom/sysfs", result.SysFSOverlay)
 }
 
 // TestLoad_CLIFlagWinsOverFile: an explicitly-passed CLI flag beats the file value.
@@ -91,20 +89,20 @@ func TestLoad_CLIFlagWinsOverFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := writeFile(t, dir, "config.yaml", `
 apiVersion: v1alpha1
-bindAddress: ":9090"
+reservedCPUs: "0-3"
 cpuDeviceMode: individual
 `)
 
 	cfg := driverconfig.Default()
 	fs := newFlagSet(t, &cfg, []string{
-		"--bind-address=:7070",
+		"--reserved-cpus=4-7",
 		"--cpu-device-mode=grouped",
 	})
 
 	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
-	assert.Equal(t, ":7070", result.BindAddress)
+	assert.Equal(t, "4-7", result.ReservedCPUs)
 	assert.Equal(t, device.CPU_DEVICE_MODE_GROUPED, result.CPUDeviceMode)
 }
 
@@ -132,7 +130,7 @@ reservedCPUs: "4-7"
 func TestLoad_FileWithoutAPIVersion(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := writeFile(t, dir, "config.yaml", `
-bindAddress: ":9191"
+reservedCPUs: "5-6"
 `)
 
 	cfg := driverconfig.Default()
@@ -141,7 +139,7 @@ bindAddress: ":9191"
 	result, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
 
 	require.NoError(t, err)
-	assert.Equal(t, ":9191", result.BindAddress)
+	assert.Equal(t, "5-6", result.ReservedCPUs)
 }
 
 // TestLoad_UnknownAPIVersionIsError: an unrecognised apiVersion is rejected.
@@ -149,7 +147,7 @@ func TestLoad_UnknownAPIVersionIsError(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := writeFile(t, dir, "config.yaml", `
 apiVersion: v99
-bindAddress: ":9090"
+reservedCPUs: "0-3"
 `)
 
 	cfg := driverconfig.Default()
@@ -177,7 +175,7 @@ func TestLoad_UnmappedFlagLogsError(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := writeFile(t, dir, "config.yaml", `
 apiVersion: v1alpha1
-bindAddress: ":9090"
+reservedCPUs: "0-3"
 `)
 
 	cfg := driverconfig.Default()
@@ -246,4 +244,32 @@ groupBy: garbage
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid groupBy")
 	assert.Contains(t, err.Error(), "garbage")
+}
+
+// TestLoad_ExcludedFieldInFileIsError: bindAddress, exposePCIeRoots, and
+// showMetrics aren't configurable via the config file, whether or not it's
+// wired through Helm; setting any of them is an error.
+func TestLoad_ExcludedFieldInFileIsError(t *testing.T) {
+	for _, tc := range []struct {
+		field   string
+		content string
+	}{
+		{field: "bindAddress", content: "bindAddress: \":9090\""},
+		{field: "exposePCIeRoots", content: "exposePCIeRoots: true"},
+		{field: "showMetrics", content: "showMetrics: true"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := writeFile(t, dir, "config.yaml", "apiVersion: v1alpha1\n"+tc.content+"\n")
+
+			cfg := driverconfig.Default()
+			fs := newFlagSet(t, &cfg, nil)
+
+			_, err := driverconfig.Load(cfg, cfgFile, fs, testr.New(t))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.field)
+			assert.Contains(t, err.Error(), "not configurable via the config file")
+		})
+	}
 }
