@@ -1,6 +1,8 @@
-# dracpu-gatherinfo
+# Troubleshooting & Diagnostics
 
-## Overview
+The repository includes a diagnostic tool `dracpu-gatherinfo` to collect node-local CPU topology and driver configuration information. This is helpful for debugging CPU allocation issues or validating that the host topology is discovered correctly.
+
+## `dracpu-gatherinfo` Overview
 
 `dracpu-gatherinfo` is a node-local diagnostic tool for collecting CPU information from the host where it runs. The command entrypoint is thin; the collection logic lives in `internal/gatherinfo` and writes a YAML report with a top-level `layoutVersion`.
 
