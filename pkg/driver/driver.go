@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/containerd/nri/pkg/stub"
@@ -84,6 +85,7 @@ type CPUDriver struct {
 	cdiMgr                  cdiManager
 	cpuTopology             *cpuinfo.CPUTopology
 	deviceNameToCPUID       map[string]int
+	cpuIDToDeviceName       map[int]string
 	deviceNameToSocketID    map[string]int
 	deviceNameToNUMANodeID  map[string]int
 	deviceSlices            [][]resourceapi.Device
@@ -95,6 +97,21 @@ type CPUDriver struct {
 	pcieRootMapper          *store.PCIeRootMapper
 	devicesPerResourceSlice int
 	metrics                 cpumetrics.Recorder
+	// Device health tracking (see health.go). healthMu protects deviceHealth
+	// and clientsMu protects healthClients. All devices are reported under the
+	// Node pool (see PublishResources), so PoolName is always cp.nodeName.
+	healthMu      sync.RWMutex
+	deviceHealth  map[string]*deviceHealthEntry
+	clientsMu     sync.RWMutex
+	healthClients []chan kubeletplugin.DeviceHealthReport
+	stopHealthCh  chan struct{}
+	healthWg      sync.WaitGroup
+}
+
+// deviceHealthEntry is the last known health of a single device.
+type deviceHealthEntry struct {
+	status  kubeletplugin.HealthStatus
+	message string
 }
 
 // Providers group the interfaces the CPUDriver depends on
@@ -152,6 +169,7 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 		nodeName:                config.NodeName,
 		kubeClient:              providers.K8SClient,
 		deviceNameToCPUID:       make(map[string]int),
+		cpuIDToDeviceName:       make(map[int]string),
 		deviceNameToSocketID:    make(map[string]int),
 		deviceNameToNUMANodeID:  make(map[string]int),
 		reservedCPUs:            config.ReservedCPUs,
@@ -161,6 +179,8 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 		pcieRootMapper:          store.NewPCIeRootMapper(),
 		devicesPerResourceSlice: config.DevicesPerResourceSlice(),
 		metrics:                 metricsRecorder,
+		deviceHealth:            make(map[string]*deviceHealthEntry),
+		stopHealthCh:            make(chan struct{}),
 	}
 	sfs := providers.EnsureSysFS()
 
@@ -202,6 +222,9 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	} else {
 		cpuEnum = device.NewCPUEnumerator(plugin.cpuTopology, plugin.reservedCPUs, plugin.pcieRootMapper)
 		plugin.deviceNameToCPUID = cpuEnum.MapDeviceNamesToIDs()
+		for name, cpuID := range plugin.deviceNameToCPUID {
+			plugin.cpuIDToDeviceName[cpuID] = name
+		}
 	}
 
 	devices := cpuEnum.CreateDevices(logger)
@@ -210,6 +233,14 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 		// Chunk devices into slices of at most devicesPerResourceSlice
 		plugin.deviceSlices = slices.Collect(slices.Chunk(devices, plugin.devicesPerResourceSlice))
 	}
+
+	for _, d := range devices {
+		plugin.deviceHealth[d.Name] = &deviceHealthEntry{
+			status:  kubeletplugin.HealthStatusHealthy,
+			message: "device initialized",
+		}
+	}
+
 	return plugin, nil
 }
 
@@ -235,6 +266,7 @@ func (cp *CPUDriver) Start(ctx context.Context) (<-chan error, error) {
 		kubeletplugin.DriverName(cp.driverName),
 		kubeletplugin.NodeName(cp.nodeName),
 		kubeletplugin.KubeClient(cp.kubeClient),
+		kubeletplugin.HealthService(true),
 	}
 	d, err := kubeletplugin.Start(ctx, cp, kubeletOpts...)
 	if err != nil {
@@ -278,11 +310,19 @@ func (cp *CPUDriver) Start(ctx context.Context) (<-chan error, error) {
 	// publish available resources
 	go cp.PublishResources(ctx)
 
+	// periodically (every healthResendInterval) resend device health so
+	// the kubelet's lease on it does not expire (see WatchHealthStatus in
+	// health.go)
+	cp.healthWg.Add(1)
+	go cp.healthResendLoop(ctx)
+
 	return asyncErr, nil
 }
 
 // Stop stops the CPUDriver.
 func (cp *CPUDriver) Stop() {
+	close(cp.stopHealthCh)
+	cp.healthWg.Wait()
 	cp.nriPlugin.Stop()
 	cp.draPlugin.Stop()
 }
