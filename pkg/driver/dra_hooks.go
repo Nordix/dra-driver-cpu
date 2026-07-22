@@ -143,6 +143,7 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 		case device.GROUP_BY_SOCKET:
 			socketID, ok := cp.deviceNameToSocketID[alloc.Device]
 			if !ok {
+				cp.setDeviceHealth(logger, alloc.Device, kubeletplugin.HealthStatusUnhealthy, "no valid socket ID found for device")
 				return kubeletplugin.PrepareResult{Err: fmt.Errorf("no valid socket ID found for device %s", alloc.Device)}
 			}
 			socketCPUs := topo.CPUDetails.CPUsInSockets(socketID)
@@ -152,6 +153,7 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 		case device.GROUP_BY_NUMA_NODE:
 			numaNodeID, ok := cp.deviceNameToNUMANodeID[alloc.Device]
 			if !ok {
+				cp.setDeviceHealth(logger, alloc.Device, kubeletplugin.HealthStatusUnhealthy, "no valid NUMA node ID found for device")
 				return kubeletplugin.PrepareResult{Err: fmt.Errorf("no valid NUMA node ID found for device %s", alloc.Device)}
 			}
 			numaCPUs := topo.CPUDetails.CPUsInNUMANodes(numaNodeID)
@@ -212,6 +214,7 @@ func (cp *CPUDriver) prepareResourceClaim(logger logr.Logger, claim *resourceapi
 		}
 		cpuID, ok := cp.deviceNameToCPUID[alloc.Device]
 		if !ok {
+			cp.setDeviceHealth(logger, alloc.Device, kubeletplugin.HealthStatusUnhealthy, "device not found in device to CPU ID map")
 			return kubeletplugin.PrepareResult{
 				Err: fmt.Errorf("device %q not found in device to CPU ID map", alloc.Device),
 			}
@@ -258,6 +261,9 @@ func (cp *CPUDriver) prepareDevices(logger logr.Logger, claim *resourceapi.Resou
 	deviceName := getCDIDeviceName(claim.UID)
 	envVar := fmt.Sprintf("%s_%s=%s", cdiEnvVarPrefix, claim.UID, claimCPUSet.String())
 	if err := cp.cdiMgr.AddDevice(logger, deviceName, envVar); err != nil {
+		// The CDI spec write is shared by every device backing this claim, so
+		// a failure here affects all of them, not just one device.
+		cp.markClaimDevicesHealth(logger, claim, kubeletplugin.HealthStatusUnhealthy, fmt.Sprintf("failed to write CDI spec: %s", err))
 		return kubeletplugin.PrepareResult{Err: err}
 	}
 
@@ -279,6 +285,7 @@ func (cp *CPUDriver) prepareDevices(logger logr.Logger, claim *resourceapi.Resou
 		preparedDevices = append(preparedDevices, preparedDevice)
 	}
 
+	cp.markClaimDevicesHealth(logger, claim, kubeletplugin.HealthStatusHealthy, "prepared successfully")
 	logger.V(4).Info("prepared devices for resource claim", "preparedDevices", preparedDevices)
 	return kubeletplugin.PrepareResult{
 		Devices: preparedDevices,
@@ -340,6 +347,11 @@ func (cp *CPUDriver) unprepareResourceClaim(logger logr.Logger, claim kubeletplu
 	// the driver does not make those CPUs available while stale CDI state remains.
 	if err := cp.cdiMgr.RemoveDevice(logger, getCDIDeviceName(claim.UID)); err != nil {
 		return err
+	}
+	if cpus, ok := cp.cpuAllocationStore.GetResourceClaimAllocation(claim.UID); ok {
+		// Here claim's devices are free again and thus clear any Unhealthy status left
+		// over from a previous failed prepare/container creation attempt.
+		cp.markCPUSetDevicesHealth(logger, cpus, kubeletplugin.HealthStatusHealthy, "unprepared")
 	}
 	cp.cpuAllocationStore.RemoveResourceClaimAllocation(logger, claim.UID)
 	return nil
