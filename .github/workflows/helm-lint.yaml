@@ -4,6 +4,8 @@ on:
     branches: [ main ]
     paths:
       - 'deployment/helm/**'
+      - 'internal/driverconfig/**'
+      - 'tools/gen-driverconfig-schema/**'
       - '.github/workflows/helm-lint.yaml'
 
 jobs:

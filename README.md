@@ -52,8 +52,11 @@ except where noted. Unknown fields are rejected at startup to catch typos early.
 | `groupBy`          | string | `numanode`  | Grouping strategy when `cpuDeviceMode` is `grouped`: `numanode`, `socket`, or `machine`. |
 | `reservedCPUs`     | string | *(none)*    | CPUs excluded from allocation, e.g. `"0-1"`.                                             |
 | `hostnameOverride` | string | *(none)*    | Override the node hostname the driver registers under.                                   |
-| `exposePCIeRoots`  | bool   | `false`     | Add PCIe root attributes to CPU devices (requires `DRAListTypeAttributes` feature gate). |
 | `kubeconfig`       | string | *(none)*    | Path to a kubeconfig file (for out-of-cluster use).                                      |
+
+`bindAddress`, `exposePCIeRoots`, and `showMetrics` are intentionally **not** settable via the
+config file — they are rejected at startup if present. Use the corresponding Helm value
+(`healthzPort`, `args.exposePCIeRoots`) or CLI flag (`--show-metrics`) instead.
 
 #### Versioning and backward compatibility
 
