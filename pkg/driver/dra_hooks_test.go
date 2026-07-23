@@ -1233,6 +1233,62 @@ func TestPrepareResourceClaimsGroupedMode(t *testing.T) {
 	}
 }
 
+func TestPrepareResourceClaimsGroupedModeRejectsInvalidCPUCapacity(t *testing.T) {
+	testCases := []struct {
+		name          string
+		capacity      string
+		expectedError string
+	}{
+		{name: "fractional below one", capacity: "500m", expectedError: "must be a whole number"},
+		{name: "fractional above one", capacity: "1500m", expectedError: "must be a whole number"},
+		{name: "zero", capacity: "0", expectedError: "must be positive"},
+		{name: "negative", capacity: "-1", expectedError: "must be positive"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			prov := Providers{
+				CPUInfo: &cpuinfo.MockCPUInfoProvider{CPUInfos: mockCPUInfos_SingleSocket_4CPUS_HT},
+				SysFS:   testSysFS(mockCPUInfos_SingleSocket_4CPUS_HT),
+			}
+			conf := Config{
+				DriverName:       testDriverName,
+				NodeName:         testNodeName,
+				CPUDeviceMode:    devattr.CPU_DEVICE_MODE_GROUPED,
+				CPUDeviceGroupBy: devattr.GROUP_BY_SOCKET,
+			}
+			driver, err := New(testr.New(t), prov, &conf)
+			require.NoError(t, err)
+			mockCdiMgr := newMockCdiMgr()
+			driver.cdiMgr = mockCdiMgr
+
+			claimUID := types.UID("claim-invalid-capacity")
+			claim := testClaimWithResults(claimUID, []resourceapi.DeviceRequestAllocationResult{
+				{
+					Driver:  testDriverName,
+					Pool:    testNodeName,
+					Device:  "cpudevsocket000",
+					Request: string(claimUID),
+					ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+						devattr.CPUResourceQualifiedName: resource.MustParse(tc.capacity),
+					},
+				},
+			})
+
+			preparedClaims, err := driver.PrepareResourceClaims(context.Background(), []*resourceapi.ResourceClaim{claim})
+			require.NoError(t, err)
+			result := preparedClaims[claimUID]
+			require.ErrorContains(t, result.Err, tc.expectedError)
+			require.Empty(t, result.Devices)
+			require.Empty(t, mockCdiMgr.devices)
+
+			_, allocated := driver.cpuAllocationStore.GetResourceClaimAllocation(claimUID)
+			require.False(t, allocated)
+			require.True(t, cpuset.New(0, 1, 2, 3).Equals(driver.cpuAllocationStore.GetSharedCPUs()))
+		})
+	}
+}
+
 func TestPrepareResourceClaimsRepeatedCalls(t *testing.T) {
 	claimUID := types.UID("claim-1")
 	cdiDeviceName := getCDIDeviceName(claimUID)
