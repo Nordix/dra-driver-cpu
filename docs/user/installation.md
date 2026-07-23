@@ -26,7 +26,7 @@ The driver supports two modes of operation. Each mode has a complete example man
 
 ### Grouped Mode (default)
 
-In grouped mode, CPUs are requested as a consumable capacity from a device group (e.g., NUMA node or socket). This example requests 10 CPUs.
+In grouped mode, CPUs are requested as a consumable capacity from a device group (e.g., NUMA node or socket). The `dra.cpu/cpu` capacity must be a positive whole number of logical CPUs; fractional, zero, and negative quantities are rejected during claim preparation. This example requests 10 CPUs.
 
 - `kubectl apply -f hack/examples/pod_with_resource_claim_grouped_mode.yaml`
 
