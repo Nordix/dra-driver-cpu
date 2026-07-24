@@ -67,11 +67,6 @@ type CPUInfoProvider interface {
 	GetCPUTopology(logger logr.Logger) (*cpuinfo.CPUTopology, error)
 }
 
-type CPUEnumerator interface {
-	MapDeviceNamesToIDs() map[string]int
-	CreateDevices(logger logr.Logger) []resourceapi.Device
-}
-
 // CPUDriver is the structure that holds all the driver runtime information.
 type CPUDriver struct {
 	driverName              string
@@ -190,21 +185,25 @@ func New(logger logr.Logger, providers Providers, config *Config) (*CPUDriver, e
 	plugin.refreshAllocationMetrics()
 	plugin.podConfigStore = store.NewPodConfig()
 
-	var cpuEnum CPUEnumerator
+	var buildDevices device.DeviceBuilderFunc
 	if plugin.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
-		cpuEnum = device.NewGroupedEnumerator(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs, plugin.pcieRootMapper)
-		switch plugin.cpuDeviceGroupBy {
-		case device.GROUP_BY_SOCKET:
-			plugin.deviceNameToSocketID = cpuEnum.MapDeviceNamesToIDs()
-		case device.GROUP_BY_NUMA_NODE:
-			plugin.deviceNameToNUMANodeID = cpuEnum.MapDeviceNamesToIDs()
-		}
+		buildDevices = device.NewGroupedDeviceBuilder(plugin.cpuDeviceGroupBy, plugin.cpuTopology, plugin.onlineCPUs, plugin.reservedCPUs, plugin.pcieRootMapper)
 	} else {
-		cpuEnum = device.NewCPUEnumerator(plugin.cpuTopology, plugin.reservedCPUs, plugin.pcieRootMapper)
-		plugin.deviceNameToCPUID = cpuEnum.MapDeviceNamesToIDs()
+		buildDevices = device.NewDeviceBuilder(plugin.cpuTopology, plugin.reservedCPUs, plugin.pcieRootMapper)
 	}
 
-	devices := cpuEnum.CreateDevices(logger)
+	devices, nameToID := buildDevices(logger)
+
+	if plugin.cpuDeviceMode == device.CPU_DEVICE_MODE_GROUPED {
+		switch plugin.cpuDeviceGroupBy {
+		case device.GROUP_BY_SOCKET:
+			plugin.deviceNameToSocketID = nameToID
+		case device.GROUP_BY_NUMA_NODE:
+			plugin.deviceNameToNUMANodeID = nameToID
+		}
+	} else {
+		plugin.deviceNameToCPUID = nameToID
+	}
 
 	if len(devices) > 0 {
 		// Chunk devices into slices of at most devicesPerResourceSlice
