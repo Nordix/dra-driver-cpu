@@ -57,7 +57,7 @@ kubectl exec -n dra-driver-cpu <dracpu-pod> -- /dracpu-gatherinfo --stdout
 
 For multi-node issues, collect one report per affected node.
 For more details, see:
-https://github.com/kubernetes-sigs/dra-driver-cpu/blob/main/docs/gatherinfo.md
+https://github.com/kubernetes-sigs/dra-driver-cpu/blob/main/docs/user/troubleshooting.md
 -->
 
 ```text
