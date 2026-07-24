@@ -129,7 +129,13 @@ func (cp *CPUDriver) prepareGroupedResourceClaim(logger logr.Logger, claim *reso
 			continue
 		}
 		if quantity, ok := alloc.ConsumedCapacity[device.CPUResourceQualifiedName]; ok {
+			if quantity.Sign() <= 0 {
+				return kubeletplugin.PrepareResult{Err: fmt.Errorf("CPU capacity for device %q must be positive, got %s", alloc.Device, quantity.String())}
+			}
 			count := quantity.Value()
+			if quantity.CmpInt64(count) != 0 {
+				return kubeletplugin.PrepareResult{Err: fmt.Errorf("CPU capacity for device %q must be a whole number, got %s", alloc.Device, quantity.String())}
+			}
 			claimCPUCount = count
 			logger.V(4).Info("found CPU request", "numCPUs", count, "device", alloc.Device)
 		}
